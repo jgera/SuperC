@@ -28,8 +28,15 @@ SuperC comes with **two unified experiences** powered by the same shared C++ eng
 ### 1. The Quick Launcher (`Ctrl + Space`)
 Run `SuperC-Launcher.exe`. It quietly docks into your system tray (near the clock).
 * Press **`Ctrl + Space`** anywhere on your desktop or inside any app.
-* A sleek, floating launcher appears in the center of your screen.
-* Results preview in real-time as you type!
+* **Minimalist Pill Design:** Initially opens as a compact, floating search pill (~58 px).
+* **Dynamic Auto-Expansion:** Expands smoothly (~148 px) with clear visual separation between the input bar and the result card as you type!
+* **High-Contrast Clarity:** Razor-sharp antialiased typography in both Dark and Light themes with zero blur or washed-out text.
+* **Right-Click Context Menu:** Right-click anywhere on the launcher (or search bar) to:
+  * 🌓 **Toggle Dark / Light Theme** (persists automatically)
+  * 🛡️ **Run as Administrator** (`Ctrl + Enter`)
+  * 📋 **Copy Result / Execute** (`Enter`)
+  * 🚀 **Toggle Start with Windows**
+  * 📖 Open Documentation & Exit
 * **`Enter`**: Executes action or copies result to clipboard.
 * **`Ctrl + Enter`**: Runs command as **Administrator**.
 * **`Esc`**: Dismisses the bar immediately.

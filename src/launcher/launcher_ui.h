@@ -16,3 +16,11 @@ void ToggleLauncher();
 
 // Checks if launcher is currently visible
 bool IsLauncherVisible();
+
+// Startup toggle and status
+bool IsRunOnStartupEnabled();
+void ToggleRunOnStartup();
+
+// Theme management
+bool IsLauncherDarkMode();
+void ToggleLauncherTheme();

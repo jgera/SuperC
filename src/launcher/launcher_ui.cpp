@@ -4,6 +4,9 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <windows.h>
+#include <windowsx.h>
+#include <shellapi.h>
+#include <shlobj.h>
 #include <dwmapi.h>
 #include <commctrl.h>
 #include <string>
@@ -20,6 +23,7 @@
 
 #pragma comment(lib, "dwmapi.lib")
 #pragma comment(lib, "comctl32.lib")
+#pragma comment(lib, "shell32.lib")
 
 namespace {
 
@@ -40,6 +44,22 @@ bool g_isExpanded = false;
 const int WIN_WIDTH = 680;
 const int HEIGHT_COLLAPSED = 58;
 const int HEIGHT_EXPANDED = 148;
+
+// Context Menu Command IDs
+enum ContextMenuCmds {
+    IDM_EDIT_UNDO = 2010,
+    IDM_EDIT_CUT = 2011,
+    IDM_EDIT_COPY = 2012,
+    IDM_EDIT_PASTE = 2013,
+    IDM_EDIT_SELECTALL = 2014,
+    IDM_TOGGLE_THEME = 2001,
+    IDM_RUN_ADMIN = 2002,
+    IDM_COPY_RESULT = 2003,
+    IDM_AUTOSTART = 2004,
+    IDM_HELP = 2005,
+    IDM_HIDE = 2006,
+    IDM_EXIT = 2007
+};
 
 // Action types
 enum class ActionType {
@@ -79,6 +99,44 @@ bool DetectWindowsDarkMode() {
     return true; // Default dark
 }
 
+void SaveThemePreference(bool isDark) {
+    HKEY hKey;
+    if (RegCreateKeyExW(HKEY_CURRENT_USER, L"Software\\SuperC", 0, nullptr, 0, KEY_WRITE, nullptr, &hKey, nullptr) == ERROR_SUCCESS) {
+        DWORD val = isDark ? 1 : 0;
+        RegSetValueExW(hKey, L"DarkMode", 0, REG_DWORD, reinterpret_cast<const BYTE*>(&val), sizeof(val));
+        RegCloseKey(hKey);
+    }
+}
+
+bool LoadThemePreference(bool& isDark) {
+    HKEY hKey;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\SuperC", 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+        DWORD val = 0;
+        DWORD size = sizeof(val);
+        if (RegQueryValueExW(hKey, L"DarkMode", nullptr, nullptr, reinterpret_cast<LPBYTE>(&val), &size) == ERROR_SUCCESS) {
+            RegCloseKey(hKey);
+            isDark = (val != 0);
+            return true;
+        }
+        RegCloseKey(hKey);
+    }
+    return false;
+}
+
+std::wstring GetLauncherExePath() {
+    wchar_t path[MAX_PATH];
+    GetModuleFileNameW(nullptr, path, MAX_PATH);
+    return path;
+}
+
+std::wstring GetStartupShortcutPath() {
+    wchar_t startupPath[MAX_PATH];
+    if (SHGetFolderPathW(nullptr, CSIDL_STARTUP, nullptr, 0, startupPath) == S_OK) {
+        return std::wstring(startupPath) + L"\\SuperC-Launcher.lnk";
+    }
+    return L"";
+}
+
 std::wstring GetEditText() {
     int len = GetWindowTextLengthW(g_hEdit);
     if (len <= 0) return L"";
@@ -97,7 +155,7 @@ void UpdateLauncherDimensions(bool expand) {
 
     SetWindowPos(g_hMainWnd, nullptr, 0, 0, WIN_WIDTH, newHeight, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
 
-    // Rounded window region
+    // Clean rounded window region
     HRGN hRgn = CreateRoundRectRgn(0, 0, WIN_WIDTH + 1, newHeight + 1, 20, 20);
     SetWindowRgn(g_hMainWnd, hRgn, TRUE);
 
@@ -328,6 +386,86 @@ void ExecuteCurrentAction(bool isElevated) {
     HideLauncher();
 }
 
+void ShowContextMenu(HWND hwnd, int screenX, int screenY, bool fromEdit) {
+    HMENU hMenu = CreatePopupMenu();
+
+    if (fromEdit) {
+        AppendMenuW(hMenu, MF_STRING, IDM_EDIT_UNDO, L"&Undo\tCtrl+Z");
+        AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
+        AppendMenuW(hMenu, MF_STRING, IDM_EDIT_CUT, L"Cu&t\tCtrl+X");
+        AppendMenuW(hMenu, MF_STRING, IDM_EDIT_COPY, L"&Copy\tCtrl+C");
+        AppendMenuW(hMenu, MF_STRING, IDM_EDIT_PASTE, L"&Paste\tCtrl+V");
+        AppendMenuW(hMenu, MF_STRING, IDM_EDIT_SELECTALL, L"Select &All\tCtrl+A");
+        AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
+    }
+
+    std::wstring themeLabel = g_isDarkMode ? L"Switch to Light Theme" : L"Switch to Dark Theme";
+    AppendMenuW(hMenu, MF_STRING, IDM_TOGGLE_THEME, themeLabel.c_str());
+    AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
+
+    if (g_action.type != ActionType::Empty) {
+        AppendMenuW(hMenu, MF_STRING, IDM_RUN_ADMIN, L"Run as Administrator\tCtrl+Enter");
+        AppendMenuW(hMenu, MF_STRING, IDM_COPY_RESULT, L"Execute / Copy Result\tEnter");
+        AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
+    }
+
+    bool autoStart = IsRunOnStartupEnabled();
+    UINT autoFlags = MF_STRING | (autoStart ? MF_CHECKED : MF_UNCHECKED);
+    AppendMenuW(hMenu, autoFlags, IDM_AUTOSTART, L"Start with Windows");
+
+    AppendMenuW(hMenu, MF_STRING, IDM_HELP, L"SuperC Documentation (GitHub)");
+    AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(hMenu, MF_STRING, IDM_HIDE, L"Hide Launcher\tEsc");
+    AppendMenuW(hMenu, MF_STRING, IDM_EXIT, L"Exit SuperC");
+
+    SetForegroundWindow(hwnd);
+    int cmd = TrackPopupMenuEx(hMenu, TPM_RETURNCMD | TPM_RIGHTBUTTON, screenX, screenY, hwnd, nullptr);
+    DestroyMenu(hMenu);
+
+    if (cmd == 0) return;
+
+    switch (cmd) {
+        case IDM_EDIT_UNDO:
+            SendMessageW(g_hEdit, WM_UNDO, 0, 0);
+            break;
+        case IDM_EDIT_CUT:
+            SendMessageW(g_hEdit, WM_CUT, 0, 0);
+            break;
+        case IDM_EDIT_COPY:
+            SendMessageW(g_hEdit, WM_COPY, 0, 0);
+            break;
+        case IDM_EDIT_PASTE:
+            SendMessageW(g_hEdit, WM_PASTE, 0, 0);
+            break;
+        case IDM_EDIT_SELECTALL:
+            SendMessageW(g_hEdit, EM_SETSEL, 0, -1);
+            break;
+        case IDM_TOGGLE_THEME:
+            ToggleLauncherTheme();
+            break;
+        case IDM_RUN_ADMIN:
+            ExecuteCurrentAction(true);
+            break;
+        case IDM_COPY_RESULT:
+            ExecuteCurrentAction(false);
+            break;
+        case IDM_AUTOSTART:
+            ToggleRunOnStartup();
+            break;
+        case IDM_HELP:
+            ShellExecuteW(nullptr, L"open", L"https://github.com/jgera/SuperC", nullptr, nullptr, SW_SHOWNORMAL);
+            break;
+        case IDM_HIDE:
+            HideLauncher();
+            break;
+        case IDM_EXIT:
+            PostQuitMessage(0);
+            break;
+        default:
+            break;
+    }
+}
+
 LRESULT CALLBACK EditSubclassProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     if (msg == WM_KEYDOWN) {
         if (wParam == VK_RETURN) {
@@ -344,6 +482,20 @@ LRESULT CALLBACK EditSubclassProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
             return 0;
         }
     }
+
+    if (msg == WM_CONTEXTMENU) {
+        int x = GET_X_LPARAM(lParam);
+        int y = GET_Y_LPARAM(lParam);
+        if (x == -1 && y == -1) {
+            RECT rc;
+            GetWindowRect(hwnd, &rc);
+            x = rc.left + 20;
+            y = rc.bottom;
+        }
+        ShowContextMenu(g_hMainWnd, x, y, true);
+        return 0;
+    }
+
     return CallWindowProcW(g_oldEditProc, hwnd, msg, wParam, lParam);
 }
 
@@ -389,45 +541,42 @@ void DrawKeyBadge(HDC hdc, int& curRightX, int y, const std::wstring& key, const
 LRESULT CALLBACK LauncherWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
         case WM_CREATE: {
-            g_isDarkMode = DetectWindowsDarkMode();
+            bool savedDark = false;
+            if (LoadThemePreference(savedDark)) {
+                g_isDarkMode = savedDark;
+            } else {
+                g_isDarkMode = DetectWindowsDarkMode();
+            }
 
-            // Native Windows 11 Rounded Corners
+            // Windows 11 Native Rounded Corners
             DWM_WINDOW_CORNER_PREFERENCE preference = DWMWCP_ROUND;
             DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &preference, sizeof(preference));
 
-            // Native Immersive Dark Mode for DWM borders
+            // Windows 11 Immersive Dark Mode for borders
             BOOL dm = g_isDarkMode ? TRUE : FALSE;
             DwmSetWindowAttribute(hwnd, 20 /* DWMWA_USE_IMMERSIVE_DARK_MODE */, &dm, sizeof(dm));
 
-            // Native Windows 11 Acrylic Backdrop Effect (3 = DWMSBT_TRANSIENTWINDOW)
-            DWORD backdrop = 3;
-            DwmSetWindowAttribute(hwnd, 38 /* DWMWA_SYSTEMBACKDROP_TYPE */, &backdrop, sizeof(backdrop));
-
-            // Extend frame for translucent backdrop blur
-            MARGINS margins = { -1, -1, -1, -1 };
-            DwmExtendFrameIntoClientArea(hwnd, &margins);
-
-            // Typography
+            // High-contrast, crystal-clear typography (ANTIALIASED_QUALITY eliminates color fringing)
             g_hFontChevron = CreateFontW(-22, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
-                DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+                DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY,
                 DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
-            g_hFontInput = CreateFontW(-19, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
-                DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+            g_hFontInput = CreateFontW(-19, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
+                DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY,
                 DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
-            g_hFontPrimary = CreateFontW(-17, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
-                DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+            g_hFontPrimary = CreateFontW(-18, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
+                DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY,
                 DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
             g_hFontBadge = CreateFontW(-11, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
-                DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+                DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY,
                 DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
-            g_hFontHint = CreateFontW(-12, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
-                DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+            g_hFontHint = CreateFontW(-13, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
+                DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY,
                 DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
-            g_hFontKeycap = CreateFontW(-10, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
-                DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+            g_hFontKeycap = CreateFontW(-11, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
+                DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY,
                 DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
 
-            // Seamless borderless Edit control inside the top search pill
+            // Seamless borderless Edit control inside the search pill
             g_hEdit = CreateWindowExW(
                 0, L"EDIT", L"",
                 WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
@@ -436,7 +585,7 @@ LRESULT CALLBACK LauncherWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
             );
             SendMessage(g_hEdit, WM_SETFONT, (WPARAM)g_hFontInput, TRUE);
 
-            // Native cue banner placeholder
+            // Cue banner placeholder
             SendMessageW(g_hEdit, 0x1501 /* EM_SETCUEBANNER */, TRUE, (LPARAM)L"Type a command, calculation (e.g. 5+7), or search...");
 
             g_oldEditProc = (WNDPROC)SetWindowLongPtrW(g_hEdit, GWLP_WNDPROC, (LONG_PTR)EditSubclassProc);
@@ -446,7 +595,7 @@ LRESULT CALLBACK LauncherWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
         }
 
         case WM_ERASEBKGND:
-            return 1; // Double-buffering prevents flicker
+            return 1; // Double buffering handles painting cleanly
 
         case WM_COMMAND: {
             if (LOWORD(wParam) == 101 && HIWORD(wParam) == EN_CHANGE) {
@@ -457,19 +606,24 @@ LRESULT CALLBACK LauncherWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
             break;
         }
 
-        case WM_CTLCOLOREDIT: {
+        case WM_CTLCOLOREDIT:
+        case WM_CTLCOLORSTATIC: {
             HDC hdc = (HDC)wParam;
-            if (g_isDarkMode) {
-                SetTextColor(hdc, RGB(250, 250, 250));
-                SetBkColor(hdc, RGB(34, 37, 45));
-                static HBRUSH hBrDark = CreateSolidBrush(RGB(34, 37, 45));
-                return (LRESULT)hBrDark;
-            } else {
-                SetTextColor(hdc, RGB(20, 20, 24));
-                SetBkColor(hdc, RGB(244, 245, 248));
-                static HBRUSH hBrLight = CreateSolidBrush(RGB(244, 245, 248));
-                return (LRESULT)hBrLight;
+            HWND hCtl = (HWND)lParam;
+            if (hCtl == g_hEdit) {
+                if (g_isDarkMode) {
+                    SetTextColor(hdc, RGB(255, 255, 255));
+                    SetBkColor(hdc, RGB(28, 32, 44));
+                    static HBRUSH hBrDark = CreateSolidBrush(RGB(28, 32, 44));
+                    return (LRESULT)hBrDark;
+                } else {
+                    SetTextColor(hdc, RGB(15, 23, 42)); // High-contrast midnight black
+                    SetBkColor(hdc, RGB(255, 255, 255));
+                    static HBRUSH hBrLight = CreateSolidBrush(RGB(255, 255, 255));
+                    return (LRESULT)hBrLight;
+                }
             }
+            break;
         }
 
         case WM_PAINT: {
@@ -481,36 +635,37 @@ LRESULT CALLBACK LauncherWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
             int width = rc.right - rc.left;
             int height = rc.bottom - rc.top;
 
-            // Off-screen double buffer
+            // Off-screen double buffer for zero flicker
             HDC hdc = CreateCompatibleDC(hdcScreen);
             HBITMAP hBmp = CreateCompatibleBitmap(hdcScreen, width, height);
             HBITMAP hOldBmp = (HBITMAP)SelectObject(hdc, hBmp);
 
-            // Translucent glass palette
-            COLORREF bgCol = g_isDarkMode ? RGB(22, 24, 30) : RGB(255, 255, 255);
-            COLORREF borderCol = g_isDarkMode ? RGB(58, 62, 74) : RGB(218, 222, 230);
-            COLORREF chevronCol = RGB(0, 200, 255); // Electric cyan
+            // Premium Color Palettes
+            COLORREF bgCol = g_isDarkMode ? RGB(16, 18, 24) : RGB(238, 242, 246);
+            COLORREF borderCol = g_isDarkMode ? RGB(45, 52, 68) : RGB(203, 213, 225);
+            COLORREF chevronCol = g_isDarkMode ? RGB(0, 225, 255) : RGB(0, 130, 220);
 
-            // Top Search Bar Capsule
-            COLORREF searchBarBg = g_isDarkMode ? RGB(34, 37, 45) : RGB(244, 245, 248);
-            COLORREF searchBarBorder = g_isDarkMode ? RGB(54, 58, 70) : RGB(222, 225, 232);
+            // Top Search Bar Pill
+            COLORREF searchBarBg = g_isDarkMode ? RGB(28, 32, 44) : RGB(255, 255, 255);
+            COLORREF searchBarBorder = g_isDarkMode ? RGB(55, 64, 85) : RGB(203, 213, 225);
 
             // Bottom Result Card
-            COLORREF resultCardBg = g_isDarkMode ? RGB(28, 30, 38) : RGB(249, 250, 253);
-            COLORREF resultCardBorder = g_isDarkMode ? RGB(48, 52, 64) : RGB(226, 228, 236);
+            COLORREF resultCardBg = g_isDarkMode ? RGB(22, 25, 34) : RGB(255, 255, 255);
+            COLORREF resultCardBorder = g_isDarkMode ? RGB(45, 52, 68) : RGB(203, 213, 225);
 
-            COLORREF primaryTextCol = g_isDarkMode ? RGB(255, 255, 255) : RGB(18, 18, 22);
-            COLORREF secondaryTextCol = g_isDarkMode ? RGB(145, 148, 160) : RGB(115, 118, 128);
+            // Text colors: Bold and high contrast
+            COLORREF primaryTextCol = g_isDarkMode ? RGB(255, 255, 255) : RGB(15, 23, 42);
+            COLORREF secondaryTextCol = g_isDarkMode ? RGB(148, 163, 184) : RGB(71, 85, 105);
 
             // Badge styling
-            COLORREF badgeBg = g_isDarkMode ? RGB(36, 48, 72) : RGB(230, 242, 255);
-            COLORREF badgeBorder = g_isDarkMode ? RGB(50, 85, 140) : RGB(175, 210, 255);
-            COLORREF badgeText = g_isDarkMode ? RGB(75, 190, 255) : RGB(0, 110, 220);
+            COLORREF badgeBg = g_isDarkMode ? RGB(12, 45, 72) : RGB(224, 242, 254);
+            COLORREF badgeBorder = g_isDarkMode ? RGB(2, 132, 199) : RGB(125, 211, 252);
+            COLORREF badgeText = g_isDarkMode ? RGB(56, 189, 248) : RGB(3, 105, 161);
 
             // Keycap styling
-            COLORREF keyBg = g_isDarkMode ? RGB(40, 42, 50) : RGB(238, 240, 244);
-            COLORREF keyBorder = g_isDarkMode ? RGB(62, 66, 78) : RGB(212, 215, 222);
-            COLORREF keyText = g_isDarkMode ? RGB(210, 212, 222) : RGB(65, 68, 78);
+            COLORREF keyBg = g_isDarkMode ? RGB(36, 42, 56) : RGB(241, 245, 249);
+            COLORREF keyBorder = g_isDarkMode ? RGB(58, 66, 88) : RGB(203, 213, 225);
+            COLORREF keyText = g_isDarkMode ? RGB(226, 232, 240) : RGB(30, 41, 59);
 
             // 1. Overall window background
             HBRUSH hBrBg = CreateSolidBrush(bgCol);
@@ -546,7 +701,7 @@ LRESULT CALLBACK LauncherWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
 
             // 4. Bottom Result Card (ONLY drawn when expanded!)
             if (g_isExpanded) {
-                // Clear visual separation: 8px gap between input bar and result card!
+                // Clear visual separation: 8px gap between input bar and result card
                 RECT rcResultCard = { 6, 58, width - 6, height - 6 };
                 HBRUSH hBrCard = CreateSolidBrush(resultCardBg);
                 HPEN hPenCard = CreatePen(PS_SOLID, 1, resultCardBorder);
@@ -612,6 +767,26 @@ LRESULT CALLBACK LauncherWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
             return 0;
         }
 
+        case WM_RBUTTONUP: {
+            POINT pt;
+            GetCursorPos(&pt);
+            ShowContextMenu(hwnd, pt.x, pt.y, false);
+            return 0;
+        }
+
+        case WM_CONTEXTMENU: {
+            int x = GET_X_LPARAM(lParam);
+            int y = GET_Y_LPARAM(lParam);
+            if (x == -1 && y == -1) {
+                POINT pt;
+                GetCursorPos(&pt);
+                x = pt.x;
+                y = pt.y;
+            }
+            ShowContextMenu(hwnd, x, y, false);
+            return 0;
+        }
+
         case WM_ACTIVATE: {
             if (LOWORD(wParam) == WA_INACTIVE) {
                 HideLauncher();
@@ -650,16 +825,13 @@ HWND CreateLauncherWindow(HINSTANCE hInstance) {
     int posY = GetSystemMetrics(SM_CYSCREEN) / 4;
 
     g_hMainWnd = CreateWindowExW(
-        WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_LAYERED,
+        WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
         CLASS_NAME,
         L"SuperC Quick Launcher",
         WS_POPUP,
         posX, posY, WIN_WIDTH, HEIGHT_COLLAPSED,
         nullptr, nullptr, hInstance, nullptr
     );
-
-    // Translucent glass opacity (240 / 255 = ~94% opacity with blurred background)
-    SetLayeredWindowAttributes(g_hMainWnd, 0, 242, LWA_ALPHA);
 
     // Initial collapsed rounded region
     HRGN hRgn = CreateRoundRectRgn(0, 0, WIN_WIDTH + 1, HEIGHT_COLLAPSED + 1, 20, 20);
@@ -680,7 +852,7 @@ void ShowLauncher() {
     int posX = mi.rcWork.left + ((mi.rcWork.right - mi.rcWork.left) - WIN_WIDTH) / 2;
     int posY = mi.rcWork.top + ((mi.rcWork.bottom - mi.rcWork.top) / 4);
 
-    // Always start collapsed!
+    // Always start collapsed
     g_isExpanded = false;
     SetWindowPos(g_hMainWnd, HWND_TOPMOST, posX, posY, WIN_WIDTH, HEIGHT_COLLAPSED, SWP_SHOWWINDOW);
 
@@ -712,4 +884,51 @@ void ToggleLauncher() {
 
 bool IsLauncherVisible() {
     return g_hMainWnd && IsWindowVisible(g_hMainWnd);
+}
+
+bool IsRunOnStartupEnabled() {
+    std::wstring link = GetStartupShortcutPath();
+    if (link.empty()) return false;
+    DWORD attr = GetFileAttributesW(link.c_str());
+    return (attr != INVALID_FILE_ATTRIBUTES);
+}
+
+void ToggleRunOnStartup() {
+    std::wstring link = GetStartupShortcutPath();
+    if (link.empty()) return;
+
+    if (IsRunOnStartupEnabled()) {
+        DeleteFileW(link.c_str());
+    } else {
+        CoInitialize(nullptr);
+        IShellLinkW* psl = nullptr;
+        if (SUCCEEDED(CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER, IID_IShellLinkW, reinterpret_cast<void**>(&psl)))) {
+            std::wstring target = GetLauncherExePath();
+            psl->SetPath(target.c_str());
+            psl->SetDescription(L"SuperC Quick Launcher");
+
+            IPersistFile* ppf = nullptr;
+            if (SUCCEEDED(psl->QueryInterface(IID_IPersistFile, reinterpret_cast<void**>(&ppf)))) {
+                ppf->Save(link.c_str(), TRUE);
+                ppf->Release();
+            }
+            psl->Release();
+        }
+        CoUninitialize();
+    }
+}
+
+bool IsLauncherDarkMode() {
+    return g_isDarkMode;
+}
+
+void ToggleLauncherTheme() {
+    g_isDarkMode = !g_isDarkMode;
+    SaveThemePreference(g_isDarkMode);
+    if (g_hMainWnd) {
+        BOOL dm = g_isDarkMode ? TRUE : FALSE;
+        DwmSetWindowAttribute(g_hMainWnd, 20 /* DWMWA_USE_IMMERSIVE_DARK_MODE */, &dm, sizeof(dm));
+        InvalidateRect(g_hMainWnd, nullptr, TRUE);
+        InvalidateRect(g_hEdit, nullptr, TRUE);
+    }
 }

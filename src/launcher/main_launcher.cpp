@@ -19,57 +19,12 @@ const UINT WM_TRAYICON = WM_USER + 101;
 const UINT ID_TRAY_SHOW = 2001;
 const UINT ID_TRAY_STARTUP = 2002;
 const UINT ID_TRAY_EXIT = 2003;
+const UINT ID_TRAY_THEME = 2004;
+const UINT ID_TRAY_HELP = 2005;
 
 NOTIFYICONDATAW g_nid = { sizeof(NOTIFYICONDATAW) };
 HWND g_hMsgWnd = nullptr;
 HWND g_hLauncher = nullptr;
-
-std::wstring GetSelfPath() {
-    wchar_t path[MAX_PATH];
-    GetModuleFileNameW(nullptr, path, MAX_PATH);
-    return path;
-}
-
-std::wstring GetStartupShortcutPath() {
-    wchar_t startupPath[MAX_PATH];
-    if (SHGetFolderPathW(nullptr, CSIDL_STARTUP, nullptr, 0, startupPath) == S_OK) {
-        return std::wstring(startupPath) + L"\\SuperC-Launcher.lnk";
-    }
-    return L"";
-}
-
-bool IsRunOnStartupEnabled() {
-    std::wstring link = GetStartupShortcutPath();
-    if (link.empty()) return false;
-    DWORD attr = GetFileAttributesW(link.c_str());
-    return (attr != INVALID_FILE_ATTRIBUTES);
-}
-
-void ToggleRunOnStartup() {
-    std::wstring link = GetStartupShortcutPath();
-    if (link.empty()) return;
-
-    if (IsRunOnStartupEnabled()) {
-        DeleteFileW(link.c_str());
-    } else {
-        // Create shortcut using IShellLink
-        CoInitialize(nullptr);
-        IShellLinkW* psl = nullptr;
-        if (SUCCEEDED(CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER, IID_IShellLinkW, reinterpret_cast<void**>(&psl)))) {
-            std::wstring target = GetSelfPath();
-            psl->SetPath(target.c_str());
-            psl->SetDescription(L"SuperC Quick Launcher");
-
-            IPersistFile* ppf = nullptr;
-            if (SUCCEEDED(psl->QueryInterface(IID_IPersistFile, reinterpret_cast<void**>(&ppf)))) {
-                ppf->Save(link.c_str(), TRUE);
-                ppf->Release();
-            }
-            psl->Release();
-        }
-        CoUninitialize();
-    }
-}
 
 void ShowTrayContextMenu(HWND hwnd) {
     POINT pt;
@@ -79,12 +34,17 @@ void ShowTrayContextMenu(HWND hwnd) {
     InsertMenuW(hMenu, 0, MF_BYPOSITION | MF_STRING, ID_TRAY_SHOW, L"Open Launcher (Ctrl + Space)");
     InsertMenuW(hMenu, 1, MF_BYPOSITION | MF_SEPARATOR, 0, nullptr);
 
+    std::wstring themeLabel = IsLauncherDarkMode() ? L"Switch to Light Theme" : L"Switch to Dark Theme";
+    InsertMenuW(hMenu, 2, MF_BYPOSITION | MF_STRING, ID_TRAY_THEME, themeLabel.c_str());
+
     UINT startupFlags = MF_BYPOSITION | MF_STRING;
     if (IsRunOnStartupEnabled()) startupFlags |= MF_CHECKED;
-    InsertMenuW(hMenu, 2, startupFlags, ID_TRAY_STARTUP, L"Start with Windows");
+    InsertMenuW(hMenu, 3, startupFlags, ID_TRAY_STARTUP, L"Start with Windows");
 
-    InsertMenuW(hMenu, 3, MF_BYPOSITION | MF_SEPARATOR, 0, nullptr);
-    InsertMenuW(hMenu, 4, MF_BYPOSITION | MF_STRING, ID_TRAY_EXIT, L"Exit SuperC");
+    InsertMenuW(hMenu, 4, MF_BYPOSITION | MF_STRING, ID_TRAY_HELP, L"Documentation (GitHub)");
+
+    InsertMenuW(hMenu, 5, MF_BYPOSITION | MF_SEPARATOR, 0, nullptr);
+    InsertMenuW(hMenu, 6, MF_BYPOSITION | MF_STRING, ID_TRAY_EXIT, L"Exit SuperC");
 
     SetForegroundWindow(hwnd);
     TrackPopupMenu(hMenu, TPM_BOTTOMALIGN | TPM_RIGHTALIGN, pt.x, pt.y, 0, hwnd, nullptr);
@@ -113,8 +73,12 @@ LRESULT CALLBACK MsgWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             UINT cmd = LOWORD(wParam);
             if (cmd == ID_TRAY_SHOW) {
                 ShowLauncher();
+            } else if (cmd == ID_TRAY_THEME) {
+                ToggleLauncherTheme();
             } else if (cmd == ID_TRAY_STARTUP) {
                 ToggleRunOnStartup();
+            } else if (cmd == ID_TRAY_HELP) {
+                ShellExecuteW(nullptr, L"open", L"https://github.com/jgera/SuperC", nullptr, nullptr, SW_SHOWNORMAL);
             } else if (cmd == ID_TRAY_EXIT) {
                 PostQuitMessage(0);
             }
