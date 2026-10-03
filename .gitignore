@@ -12,7 +12,8 @@ bin/
 *.suo
 .vscode/
 
-# Keep root binaries out of git tracking (distributed via GitHub Releases)
+# Keep root and release binaries out of git tracking (distributed via GitHub Releases)
 c.exe
 SuperC-Launcher.exe
 SuperC*.zip
+releases/*.zip

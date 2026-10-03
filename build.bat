@@ -20,6 +20,7 @@ if errorlevel 1 (
 )
 
 if not exist "bin" mkdir "bin"
+if not exist "releases" mkdir "releases"
 
 taskkill /F /IM SuperC-Launcher.exe >nul 2>&1
 

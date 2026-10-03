@@ -1,40 +1,82 @@
 # SuperC - The Ultra-Fast Windows Power Utility & Quick Launcher
 
-A blazing-fast (< 2 ms startup, ~4 MB RAM), zero-dependency, native C++ command runner, inline calculator, app launcher, and developer toolkit for Windows.
+<p align="center">
+  <img src="assets/banner.png" alt="SuperC Banner" width="100%" />
+</p>
 
-SuperC comes with **two unified experiences** powered by the same shared C++ engine:
+<p align="center">
+  <a href="https://github.com/jgera/SuperC/releases/latest"><img src="https://img.shields.io/github/v/release/jgera/SuperC?style=for-the-badge&color=00e5ff&labelColor=11141c" alt="Latest Release" /></a>
+  <a href="https://github.com/jgera/SuperC/blob/main/LICENSE"><img src="https://img.shields.io/github/license/jgera/SuperC?style=for-the-badge&color=8b5cf6&labelColor=11141c" alt="License" /></a>
+  <img src="https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-blue?style=for-the-badge&color=0284c7&labelColor=11141c" alt="Platform" />
+  <img src="https://img.shields.io/badge/Memory-%7E4%20MB%20RAM-emerald?style=for-the-badge&color=10b981&labelColor=11141c" alt="Memory" />
+  <img src="https://img.shields.io/badge/Hotkey%20Latency-%3C%202%20ms-yellow?style=for-the-badge&color=f59e0b&labelColor=11141c" alt="Latency" />
+</p>
+
+---
+
+## ⚡ What is SuperC?
+
+**SuperC** is a blazing-fast, lightweight, pure native C++ productivity suite for Windows. It combines two unified experiences powered by the same shared C++ engine:
 
 1. **`SuperC-Launcher.exe` (Floating Quick Launcher)**  
-   Press **`Ctrl + Space`** anywhere to summon a modern floating bar with real-time live preview as you type.
-2. **`c.exe` (Win + R / Command-Line Tool)**  
+   Press **`Ctrl + Space`** anywhere to summon a modern floating command bar with real-time live preview as you type.
+2. **`c.exe` (Windows Run / Command-Line Tool)**  
    Press **`Win + R`** and type `c <anything>` to run commands with interactive terminals, instant calculations, or developer quickies.
 
 ---
 
-## ⚡ Why SuperC?
+## 📸 Screenshots & Visual Tour
+
+### 🌓 Dark & Light Themes
+Switch seamlessly between Raycast-style obsidian Dark Mode and crisp Light Mode with crystal-clear antialiased typography:
+
+<p align="center">
+  <img src="assets/preview-dark.png" width="49%" alt="Dark Theme" />
+  <img src="assets/preview-light.png" width="49%" alt="Light Theme" />
+</p>
+
+### 🧮 Live Calculations & Offline Unit Conversions
+Results compute instantly in real time as you type:
+
+<p align="center">
+  <img src="assets/preview-math.png" width="49%" alt="Live Math Calculations" />
+  <img src="assets/preview-unit.png" width="49%" alt="Offline Unit Conversions" />
+</p>
+
+### 🖱️ Right-Click Context Menu
+Right-click anywhere on the floating launcher or search bar for instant control:
+
+<p align="center">
+  <img src="assets/preview-context-menu.png" width="75%" alt="Right-Click Context Menu" />
+</p>
+
+---
+
+## 🚀 Why SuperC?
 
 | Feature | SuperC | PowerToys Run / Wox / Flow |
 | :--- | :--- | :--- |
 | **Language & Runtime** | **Pure Native C++ / Win32** | C# / .NET / WPF / WinUI |
 | **Idle Memory Usage** | **~4 MB RAM** | **150 MB – 300 MB RAM** |
-| **Hotkey Latency** | **< 2 ms** (instant) | 50 – 150 ms (garbage collection lag) |
+| **Hotkey Response Latency** | **< 2 ms** (instant) | 50 – 150 ms (garbage collection lag) |
 | **External Dependencies** | **Zero** | .NET Runtime, Desktop SDKs |
 | **Dual Interface** | **Floating Bar (`Ctrl+Space`) + Win+R (`c ...`)** | Floating bar only |
+| **Startup Overhead** | **Instantaneous** | Background runtime JIT boot |
 
 ---
 
-## 🚀 Quick Start
+## ⌨️ Quick Start & Usage
 
 ### 1. The Quick Launcher (`Ctrl + Space`)
-Run `SuperC-Launcher.exe`. It quietly docks into your system tray (near the clock).
-* Press **`Ctrl + Space`** anywhere on your desktop or inside any app.
+Download and run `SuperC-Launcher.exe`. It quietly docks into your system tray (near the clock).
+* Press **`Ctrl + Space`** anywhere on your desktop or inside any application.
 * **Minimalist Pill Design:** Initially opens as a compact, floating search pill (~58 px).
 * **Dynamic Auto-Expansion:** Expands smoothly (~148 px) with clear visual separation between the input bar and the result card as you type!
-* **High-Contrast Clarity:** Razor-sharp antialiased typography in both Dark and Light themes with zero blur or washed-out text.
+* **High-Contrast Clarity:** Razor-sharp grayscale antialiased typography in both Dark and Light themes with zero blur or washed-out text.
 * **Right-Click Context Menu:** Right-click anywhere on the launcher (or search bar) to:
-  * 🌓 **Toggle Dark / Light Theme** (persists automatically)
+  * 🌓 **Toggle Dark / Light Theme** (persists automatically in registry)
   * 🛡️ **Run as Administrator** (`Ctrl + Enter`)
-  * 📋 **Copy Result / Execute** (`Enter`)
+  * 📋 **Execute / Copy Result** (`Enter`)
   * 🚀 **Toggle Start with Windows**
   * 📖 Open Documentation & Exit
 * **`Enter`**: Executes action or copies result to clipboard.
@@ -44,8 +86,8 @@ Run `SuperC-Launcher.exe`. It quietly docks into your system tray (near the cloc
 ### 2. Windows Run Integration (`Win + R`)
 Double-click `register.bat` to register `c` into your Windows Run dialog.
 * Press **`Win + R`**, type `c 5+7` or `c ipconfig`.
-* Math expressions pop up with zero console flashing and auto-copy to clipboard.
-* Commands keep the terminal open (`cmd /k`) so you can read the output.
+* Math expressions evaluate instantly with zero console flashing and auto-copy to clipboard.
+* Terminal commands keep the console open (`cmd /k`) so you can inspect output.
 
 ---
 
@@ -102,30 +144,45 @@ Execute core Windows system actions right from the keyboard:
 
 ```
 Super C/
-├── bin/                       # Compiled 64-bit binaries
-│   ├── c.exe                  # Win+R / CLI executable
-│   └── SuperC-Launcher.exe    # Floating Quick Launcher
+├── assets/                       # High-res GitHub banner and UI previews
+│   ├── banner.png                # Hero banner
+│   ├── preview-dark.png          # Dark mode preview
+│   ├── preview-light.png         # Light mode preview
+│   ├── preview-math.png          # Math calculation preview
+│   ├── preview-unit.png          # Unit conversion preview
+│   └── preview-context-menu.png  # Right-click context menu preview
+├── bin/                          # Build output directory
+│   ├── c.exe                     # Win+R / CLI executable
+│   └── SuperC-Launcher.exe       # Floating Quick Launcher executable
+├── releases/                     # Packaged release archives (.zip)
+│   ├── SuperC-v1.5.0-windows-x64.zip
+│   └── README.md
 ├── src/
-│   ├── common/                # Shared C++ core engine
-│   │   ├── math_eval.h/.cpp   # Recursive descent math parser
-│   │   ├── unit_conv.h/.cpp   # Offline unit conversion engine
-│   │   ├── app_index.h/.cpp   # Start Menu .lnk scanner & fuzzy matcher
-│   │   ├── window_walker.h/.cpp # Open window switcher (EnumWindows)
-│   │   ├── sys_control.h/.cpp # System power commands (lock, sleep, trash)
-│   │   └── handlers.h/.cpp    # Network, port inspector, password gen
-│   ├── cli/                   # Win+R / CLI component
-│   │   ├── main_cli.cpp       # CLI entry point & command router
-│   │   └── ui.h/.cpp          # Win32 result dialogs & clipboard auto-copy
-│   └── launcher/              # Floating Quick Launcher component
-│       ├── main_launcher.cpp  # Tray daemon & Ctrl+Space global hotkey
-│       └── launcher_ui.h/.cpp # Frameless DWM rounded window & live preview
+│   ├── common/                   # Shared C++ core engine
+│   │   ├── math_eval.h/.cpp      # Recursive descent math parser
+│   │   ├── unit_conv.h/.cpp      # Offline unit conversion engine
+│   │   ├── app_index.h/.cpp      # Start Menu .lnk scanner & fuzzy matcher
+│   │   ├── window_walker.h/.cpp  # Open window switcher (EnumWindows)
+│   │   ├── sys_control.h/.cpp    # System power commands (lock, sleep, trash)
+│   │   └── handlers.h/.cpp       # Network, port inspector, password gen
+│   ├── cli/                      # Win+R / CLI component
+│   │   ├── main_cli.cpp          # CLI entry point & command router
+│   │   └── ui.h/.cpp             # Win32 result dialogs & clipboard auto-copy
+│   ├── launcher/                 # Floating Quick Launcher component
+│   │   ├── main_launcher.cpp     # Tray daemon & Ctrl+Space global hotkey
+│   │   └── launcher_ui.h/.cpp    # Frameless DWM rounded window & live preview
+│   └── resources/                # Assets, resources & build generators
+│       ├── app.rc                # Windows resource file
+│       ├── app.ico               # Multi-resolution application icon
+│       ├── make_icon.py          # Icon generator script
+│       └── make_assets.py        # Banner & preview generator script
 ├── tests/
-│   └── test_math.cpp          # Automated test suite
-├── build.bat                  # One-click MSVC compile script
-├── register.bat               # Registers c.exe in Windows Run (App Paths)
-├── unregister.bat             # Unregisters c.exe
-├── LICENSE                    # MIT License
-└── README.md                  # Documentation
+│   └── test_math.cpp             # Automated unit test suite
+├── build.bat                     # One-click MSVC compile script
+├── register.bat                  # Registers c.exe in Windows Run (App Paths)
+├── unregister.bat                # Unregisters c.exe
+├── LICENSE                       # MIT License
+└── README.md                     # Documentation
 ```
 
 ---
@@ -137,11 +194,11 @@ Super C/
 * Visual Studio 2022 (Community or Build Tools with C++ workload)
 
 ### Build Command
-Simply run:
+Simply execute:
 ```cmd
 build.bat
 ```
-Both `c.exe` and `SuperC-Launcher.exe` will be compiled and copied to the root folder ready for use.
+Both `c.exe` and `SuperC-Launcher.exe` will be compiled with embedded resources and copied ready for use.
 
 ---
 
