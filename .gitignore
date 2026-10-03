@@ -1,0 +1,17 @@
+# Build outputs
+bin/
+*.obj
+*.pdb
+*.ilk
+*.exp
+*.lib
+
+# Visual Studio / Editor files
+.vs/
+*.user
+*.suo
+.vscode/
+
+# Keep root c.exe out of git tracking (distributed via GitHub Releases)
+c.exe
+SuperC*.zip
