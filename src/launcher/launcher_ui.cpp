@@ -40,6 +40,7 @@ HFONT g_hFontKeycap = nullptr;
 
 bool g_isDarkMode = true;
 bool g_isExpanded = false;
+bool g_isMenuOpen = false;
 
 const int WIN_WIDTH = 680;
 const int HEIGHT_COLLAPSED = 58;
@@ -387,6 +388,9 @@ void ExecuteCurrentAction(bool isElevated) {
 }
 
 void ShowContextMenu(HWND hwnd, int screenX, int screenY, bool fromEdit) {
+    if (g_isMenuOpen) return;
+    g_isMenuOpen = true;
+
     HMENU hMenu = CreatePopupMenu();
 
     if (fromEdit) {
@@ -419,10 +423,20 @@ void ShowContextMenu(HWND hwnd, int screenX, int screenY, bool fromEdit) {
     AppendMenuW(hMenu, MF_STRING, IDM_EXIT, L"Exit SuperC");
 
     SetForegroundWindow(hwnd);
-    int cmd = TrackPopupMenuEx(hMenu, TPM_RETURNCMD | TPM_RIGHTBUTTON, screenX, screenY, hwnd, nullptr);
+    int cmd = TrackPopupMenuEx(hMenu, TPM_RETURNCMD | TPM_LEFTBUTTON | TPM_RIGHTBUTTON, screenX, screenY, hwnd, nullptr);
+    PostMessageW(hwnd, WM_NULL, 0, 0);
     DestroyMenu(hMenu);
 
-    if (cmd == 0) return;
+    g_isMenuOpen = false;
+
+    if (cmd == 0) {
+        // If the user clicked outside the launcher to another app, hide launcher
+        HWND fg = GetForegroundWindow();
+        if (fg != g_hMainWnd && fg != g_hEdit) {
+            HideLauncher();
+        }
+        return;
+    }
 
     switch (cmd) {
         case IDM_EDIT_UNDO:
@@ -481,6 +495,13 @@ LRESULT CALLBACK EditSubclassProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
             }
             return 0;
         }
+    }
+
+    if (msg == WM_RBUTTONUP) {
+        POINT pt;
+        GetCursorPos(&pt);
+        ShowContextMenu(g_hMainWnd, pt.x, pt.y, true);
+        return 0;
     }
 
     if (msg == WM_CONTEXTMENU) {
@@ -789,7 +810,9 @@ LRESULT CALLBACK LauncherWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
 
         case WM_ACTIVATE: {
             if (LOWORD(wParam) == WA_INACTIVE) {
-                HideLauncher();
+                if (!g_isMenuOpen) {
+                    HideLauncher();
+                }
             }
             return 0;
         }
