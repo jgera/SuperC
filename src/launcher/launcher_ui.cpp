@@ -533,8 +533,60 @@ void ShowContextMenu(HWND hwnd, int screenX, int screenY, bool fromEdit) {
     }
 }
 
+void HandleCtrlBackspace(HWND hwnd) {
+    DWORD startSel = 0;
+    DWORD endSel = 0;
+    SendMessageW(hwnd, EM_GETSEL, (WPARAM)&startSel, (LPARAM)&endSel);
+
+    if (startSel != endSel) {
+        SendMessageW(hwnd, EM_REPLACESEL, TRUE, (LPARAM)L"");
+        return;
+    }
+
+    if (startSel == 0) return;
+
+    int textLen = GetWindowTextLengthW(hwnd);
+    if (textLen <= 0) return;
+
+    std::vector<wchar_t> buf(textLen + 1);
+    GetWindowTextW(hwnd, buf.data(), textLen + 1);
+    const wchar_t* str = buf.data();
+
+    int pos = static_cast<int>(startSel);
+
+    // Skip trailing whitespace before caret
+    while (pos > 0 && iswspace(str[pos - 1])) {
+        pos--;
+    }
+
+    // Skip preceding word (alphanumeric+underscore sequence or punctuation symbols)
+    if (pos > 0) {
+        bool isAlphaNum = iswalnum(str[pos - 1]) || str[pos - 1] == L'_';
+        if (isAlphaNum) {
+            while (pos > 0 && (iswalnum(str[pos - 1]) || str[pos - 1] == L'_')) {
+                pos--;
+            }
+        } else {
+            while (pos > 0 && !iswalnum(str[pos - 1]) && str[pos - 1] != L'_' && !iswspace(str[pos - 1])) {
+                pos--;
+            }
+        }
+    }
+
+    SendMessageW(hwnd, EM_SETSEL, pos, startSel);
+    SendMessageW(hwnd, EM_REPLACESEL, TRUE, (LPARAM)L"");
+}
+
 LRESULT CALLBACK EditSubclassProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     if (msg == WM_KEYDOWN) {
+        if (wParam == VK_BACK && (GetKeyState(VK_CONTROL) < 0)) {
+            HandleCtrlBackspace(hwnd);
+            return 0;
+        }
+        if (wParam == 'A' && (GetKeyState(VK_CONTROL) < 0)) {
+            SendMessageW(hwnd, EM_SETSEL, 0, -1);
+            return 0;
+        }
         if (wParam == VK_DOWN) {
             if (g_selectedIndex + 1 < static_cast<int>(g_results.size())) {
                 g_selectedIndex++;
@@ -560,6 +612,14 @@ LRESULT CALLBACK EditSubclassProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
             } else {
                 HideLauncher();
             }
+            return 0;
+        }
+    }
+
+    if (msg == WM_CHAR) {
+        // Suppress 0x7F (DEL char inserted on Ctrl+Backspace in standard edit controls)
+        // and 0x01 (Ctrl+A character)
+        if (wParam == 0x7F || wParam == 0x01 || (wParam == 0x08 && (GetKeyState(VK_CONTROL) < 0))) {
             return 0;
         }
     }

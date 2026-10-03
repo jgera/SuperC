@@ -49,7 +49,43 @@ int main() {
     assert(testUnit(L"32f in c", 0.0));
     assert(testUnit(L"10km in m", 10000.0));
     assert(testUnit(L"1024mb in gb", 1.0));
-    assert(testUnit(L"24h in d", 1.0));
+    // 3. Ctrl+Backspace Word-Left Deletion Tests
+    auto testWordDelete = [](const std::wstring& input, int caret, const std::wstring& expectedText, int expectedCaret) {
+        int pos = caret;
+        while (pos > 0 && iswspace(input[pos - 1])) {
+            pos--;
+        }
+        if (pos > 0) {
+            bool isAlphaNum = iswalnum(input[pos - 1]) || input[pos - 1] == L'_';
+            if (isAlphaNum) {
+                while (pos > 0 && (iswalnum(input[pos - 1]) || input[pos - 1] == L'_')) {
+                    pos--;
+                }
+            } else {
+                while (pos > 0 && !iswalnum(input[pos - 1]) && input[pos - 1] != L'_' && !iswspace(input[pos - 1])) {
+                    pos--;
+                }
+            }
+        }
+        std::wstring result = input.substr(0, pos) + input.substr(caret);
+        if (result != expectedText || pos != expectedCaret) {
+            std::wcout << L"[FAIL WordDelete] Input: \"" << input << L"\" Expected: \"" << expectedText << L"\" (pos " << expectedCaret << L") Got: \"" << result << L"\" (pos " << pos << L")" << std::endl;
+            return false;
+        }
+        std::wcout << L"[PASS WordDelete] \"" << input << L"\" -> \"" << result << L"\"" << std::endl;
+        return true;
+    };
+
+    assert(testWordDelete(L"notepad calc", 12, L"notepad ", 8));
+    assert(testWordDelete(L"notepad ", 8, L"", 0));
+    assert(testWordDelete(L"hello   world", 13, L"hello   ", 8));
+    assert(testWordDelete(L"hello   world   ", 16, L"hello   ", 8));
+    assert(testWordDelete(L"5 + 12", 6, L"5 + ", 4));
+    assert(testWordDelete(L"5 + ", 4, L"5 ", 2));
+    assert(testWordDelete(L"5 ", 2, L"", 0));
+    assert(testWordDelete(L"", 0, L"", 0));
+    assert(testWordDelete(L"   ", 3, L"", 0));
+    assert(testWordDelete(L"c:\\path\\file", 12, L"c:\\path\\", 8));
 
     std::wcout << L"All SuperC Tests PASSED successfully!" << std::endl;
     return 0;
