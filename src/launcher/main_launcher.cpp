@@ -25,6 +25,7 @@ const UINT ID_TRAY_HELP = 2005;
 NOTIFYICONDATAW g_nid = { sizeof(NOTIFYICONDATAW) };
 HWND g_hMsgWnd = nullptr;
 HWND g_hLauncher = nullptr;
+UINT g_uTaskbarCreatedMsg = 0;
 
 void ShowTrayContextMenu(HWND hwnd) {
     POINT pt;
@@ -37,22 +38,46 @@ void ShowTrayContextMenu(HWND hwnd) {
     std::wstring themeLabel = IsLauncherDarkMode() ? L"Switch to Light Theme" : L"Switch to Dark Theme";
     InsertMenuW(hMenu, 2, MF_BYPOSITION | MF_STRING, ID_TRAY_THEME, themeLabel.c_str());
 
+    bool appsOnly = AppIndexer::Instance().GetAppsOnly();
+    UINT appsFlags = MF_BYPOSITION | MF_STRING | (appsOnly ? MF_CHECKED : MF_UNCHECKED);
+    InsertMenuW(hMenu, 3, appsFlags, IDM_TOGGLE_APPS_ONLY, L"Applications Only (Exclude .txt/docs)");
+
     UINT startupFlags = MF_BYPOSITION | MF_STRING;
     if (IsRunOnStartupEnabled()) startupFlags |= MF_CHECKED;
-    InsertMenuW(hMenu, 3, startupFlags, ID_TRAY_STARTUP, L"Start with Windows");
+    InsertMenuW(hMenu, 4, startupFlags, ID_TRAY_STARTUP, L"Start with Windows");
 
-    InsertMenuW(hMenu, 4, MF_BYPOSITION | MF_STRING, ID_TRAY_HELP, L"Documentation (GitHub)");
+    InsertMenuW(hMenu, 5, MF_BYPOSITION | MF_STRING, ID_TRAY_HELP, L"Documentation (GitHub)");
 
-    InsertMenuW(hMenu, 5, MF_BYPOSITION | MF_SEPARATOR, 0, nullptr);
-    InsertMenuW(hMenu, 6, MF_BYPOSITION | MF_STRING, ID_TRAY_EXIT, L"Exit SuperC");
+    InsertMenuW(hMenu, 6, MF_BYPOSITION | MF_SEPARATOR, 0, nullptr);
+    InsertMenuW(hMenu, 7, MF_BYPOSITION | MF_STRING, ID_TRAY_EXIT, L"Exit SuperC");
 
+    // Required sequence for Shell Notification Icon context menu responsiveness
     SetForegroundWindow(hwnd);
-    TrackPopupMenu(hMenu, TPM_BOTTOMALIGN | TPM_RIGHTALIGN, pt.x, pt.y, 0, hwnd, nullptr);
+    int cmd = TrackPopupMenuEx(hMenu, TPM_RETURNCMD | TPM_BOTTOMALIGN | TPM_RIGHTALIGN, pt.x, pt.y, hwnd, nullptr);
     PostMessageW(hwnd, WM_NULL, 0, 0);
     DestroyMenu(hMenu);
+
+    if (cmd == ID_TRAY_SHOW) {
+        ShowLauncher();
+    } else if (cmd == ID_TRAY_THEME) {
+        ToggleLauncherTheme();
+    } else if (cmd == IDM_TOGGLE_APPS_ONLY) {
+        AppIndexer::Instance().SetAppsOnly(!appsOnly);
+    } else if (cmd == ID_TRAY_STARTUP) {
+        ToggleRunOnStartup();
+    } else if (cmd == ID_TRAY_HELP) {
+        ShellExecuteW(nullptr, L"open", L"https://github.com/jgera/SuperC", nullptr, nullptr, SW_SHOWNORMAL);
+    } else if (cmd == ID_TRAY_EXIT) {
+        PostQuitMessage(0);
+    }
 }
 
 LRESULT CALLBACK MsgWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    if (msg != 0 && msg == g_uTaskbarCreatedMsg) {
+        Shell_NotifyIconW(NIM_ADD, &g_nid);
+        return 0;
+    }
+
     switch (msg) {
         case WM_HOTKEY: {
             if (wParam == 1) {
@@ -62,9 +87,10 @@ LRESULT CALLBACK MsgWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         }
 
         case WM_TRAYICON: {
-            if (lParam == WM_LBUTTONUP) {
+            UINT event = LOWORD(lParam);
+            if (event == WM_LBUTTONUP) {
                 ToggleLauncher();
-            } else if (lParam == WM_RBUTTONUP || lParam == WM_CONTEXTMENU) {
+            } else if (event == WM_RBUTTONUP || event == WM_CONTEXTMENU) {
                 ShowTrayContextMenu(hwnd);
             }
             return 0;
@@ -99,10 +125,17 @@ LRESULT CALLBACK MsgWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 } // namespace
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR /*lpCmdLine*/, int /*nCmdShow*/) {
-    // Single instance mutex
-    HANDLE hMutex = CreateMutexW(nullptr, TRUE, L"Global\\SuperC_QuickLauncher_SingleInstance");
-    if (GetLastError() == ERROR_ALREADY_EXISTS) {
-        CloseHandle(hMutex);
+    // Single instance mutex (user session level)
+    SetLastError(0);
+    HANDLE hMutex = CreateMutexW(nullptr, TRUE, L"SuperC_QuickLauncher_SingleInstance");
+    if (!hMutex || GetLastError() == ERROR_ALREADY_EXISTS) {
+        if (hMutex) {
+            CloseHandle(hMutex);
+        }
+        HWND hExistingMsg = FindWindowW(L"SuperC_MsgWndClass", nullptr);
+        if (hExistingMsg) {
+            PostMessageW(hExistingMsg, WM_COMMAND, ID_TRAY_SHOW, 0);
+        }
         return 0;
     }
 
@@ -110,6 +143,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR /*l
 
     // Warm up app indexer
     AppIndexer::Instance().RefreshIndex();
+
+    // Register TaskbarCreated message to restore icon if Explorer restarts
+    g_uTaskbarCreatedMsg = RegisterWindowMessageW(L"TaskbarCreated");
 
     // Create background window for hotkeys and tray
     const wchar_t* MSG_CLASS = L"SuperC_MsgWndClass";
@@ -128,6 +164,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR /*l
     RegisterHotKey(g_hMsgWnd, 1, MOD_CONTROL | MOD_NOREPEAT, VK_SPACE);
 
     // System tray icon in lower-right notification area
+    ZeroMemory(&g_nid, sizeof(g_nid));
+    g_nid.cbSize = sizeof(NOTIFYICONDATAW);
     g_nid.hWnd = g_hMsgWnd;
     g_nid.uID = 1;
     g_nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;

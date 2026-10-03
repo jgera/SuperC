@@ -71,17 +71,20 @@ Right-click anywhere on the floating launcher or search bar for instant control:
 Download and run `SuperC-Launcher.exe`. It quietly docks into your system tray (near the clock).
 * Press **`Ctrl + Space`** anywhere on your desktop or inside any application.
 * **Minimalist Pill Design:** Initially opens as a compact, floating search pill (~58 px).
-* **Dynamic Auto-Expansion:** Expands smoothly (~148 px) with clear visual separation between the input bar and the result card as you type!
+* **Multi-Match Dynamic Expansion:** Expands smoothly with clear visual separation between the input bar and the results list, displaying up to **3 matching applications or open windows**!
+* **Arrow-Key Navigation:** Use **`↑` / `↓`** arrow keys to cycle through matches with an electric accent indicator, or click any item card directly.
+* **Smart App & Doc Filtering:** Automatically filters out clutter (e.g. `.txt`, `.log`, `.md`, manuals, uninstallers, and help links) so only real apps are prioritized.
 * **High-Contrast Clarity:** Razor-sharp grayscale antialiased typography in both Dark and Light themes with zero blur or washed-out text.
-* **Right-Click Context Menu:** Right-click anywhere on the launcher (or search bar) to:
+* **Right-Click Context Menu (Launcher & Tray):** Right-click anywhere on the floating bar, search input, or system tray icon to:
   * 🌓 **Toggle Dark / Light Theme** (persists automatically in registry)
+  * 🎯 **Toggle Applications Only (Exclude .txt/docs)** to customize search scope
   * 🛡️ **Run as Administrator** (`Ctrl + Enter`)
   * 📋 **Execute / Copy Result** (`Enter`)
   * 🚀 **Toggle Start with Windows**
   * 📖 Open Documentation & Exit
-* **`Enter`**: Executes action or copies result to clipboard.
-* **`Ctrl + Enter`**: Runs command as **Administrator**.
-* **`Esc`**: Dismisses the bar immediately.
+* **`Enter`**: Executes the currently selected match or copies result to clipboard.
+* **`Ctrl + Enter`**: Runs the selected application/command as **Administrator**.
+* **`Esc`**: Dismisses the launcher immediately.
 
 ### 2. Windows Run Integration (`Win + R`)
 Double-click `register.bat` to register `c` into your Windows Run dialog.
@@ -155,7 +158,7 @@ Super C/
 │   ├── c.exe                     # Win+R / CLI executable
 │   └── SuperC-Launcher.exe       # Floating Quick Launcher executable
 ├── releases/                     # Packaged release archives (.zip)
-│   ├── SuperC-v1.5.0-windows-x64.zip
+│   ├── SuperC-v1.6.0-windows-x64.zip
 │   └── README.md
 ├── src/
 │   ├── common/                   # Shared C++ core engine
