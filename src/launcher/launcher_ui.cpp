@@ -848,13 +848,16 @@ HWND CreateLauncherWindow(HINSTANCE hInstance) {
     int posY = GetSystemMetrics(SM_CYSCREEN) / 4;
 
     g_hMainWnd = CreateWindowExW(
-        WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
+        WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_LAYERED,
         CLASS_NAME,
         L"SuperC Quick Launcher",
         WS_POPUP,
         posX, posY, WIN_WIDTH, HEIGHT_COLLAPSED,
         nullptr, nullptr, hInstance, nullptr
     );
+
+    // Subtle premium glass transparency (~94% opacity)
+    SetLayeredWindowAttributes(g_hMainWnd, 0, 240, LWA_ALPHA);
 
     // Initial collapsed rounded region
     HRGN hRgn = CreateRoundRectRgn(0, 0, WIN_WIDTH + 1, HEIGHT_COLLAPSED + 1, 20, 20);

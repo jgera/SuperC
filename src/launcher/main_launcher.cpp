@@ -48,6 +48,7 @@ void ShowTrayContextMenu(HWND hwnd) {
 
     SetForegroundWindow(hwnd);
     TrackPopupMenu(hMenu, TPM_BOTTOMALIGN | TPM_RIGHTALIGN, pt.x, pt.y, 0, hwnd, nullptr);
+    PostMessageW(hwnd, WM_NULL, 0, 0);
     DestroyMenu(hMenu);
 }
 
@@ -63,7 +64,7 @@ LRESULT CALLBACK MsgWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         case WM_TRAYICON: {
             if (lParam == WM_LBUTTONUP) {
                 ToggleLauncher();
-            } else if (lParam == WM_RBUTTONUP) {
+            } else if (lParam == WM_RBUTTONUP || lParam == WM_CONTEXTMENU) {
                 ShowTrayContextMenu(hwnd);
             }
             return 0;
@@ -110,7 +111,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR /*l
     // Warm up app indexer
     AppIndexer::Instance().RefreshIndex();
 
-    // Create background message-only window for hotkeys and tray
+    // Create background window for hotkeys and tray
     const wchar_t* MSG_CLASS = L"SuperC_MsgWndClass";
     WNDCLASSEXW wcMsg = { sizeof(WNDCLASSEXW) };
     wcMsg.lpfnWndProc = MsgWndProc;
@@ -118,7 +119,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR /*l
     wcMsg.lpszClassName = MSG_CLASS;
     RegisterClassExW(&wcMsg);
 
-    g_hMsgWnd = CreateWindowExW(0, MSG_CLASS, L"SuperC_MsgWnd", 0, 0, 0, 0, 0, HWND_MESSAGE, nullptr, hInstance, nullptr);
+    g_hMsgWnd = CreateWindowExW(0, MSG_CLASS, L"SuperC_MsgWnd", WS_POPUP, 0, 0, 0, 0, nullptr, nullptr, hInstance, nullptr);
 
     // Create the floating launcher window (starts hidden)
     g_hLauncher = CreateLauncherWindow(hInstance);
@@ -126,10 +127,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR /*l
     // Register global hotkey: Ctrl + Space
     RegisterHotKey(g_hMsgWnd, 1, MOD_CONTROL | MOD_NOREPEAT, VK_SPACE);
 
-    // System tray icon
+    // System tray icon in lower-right notification area
     g_nid.hWnd = g_hMsgWnd;
     g_nid.uID = 1;
     g_nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
+    g_nid.uCallbackMessage = WM_TRAYICON;
     HICON hAppIcon = LoadIcon(hInstance, MAKEINTRESOURCE(1));
     g_nid.hIcon = hAppIcon ? hAppIcon : LoadIcon(nullptr, IDI_APPLICATION);
     wcscpy_s(g_nid.szTip, L"SuperC Quick Launcher (Ctrl + Space)");
