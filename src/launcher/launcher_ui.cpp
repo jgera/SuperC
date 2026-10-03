@@ -35,6 +35,11 @@ HFONT g_hFontHint = nullptr;
 HFONT g_hFontKeycap = nullptr;
 
 bool g_isDarkMode = true;
+bool g_isExpanded = false;
+
+const int WIN_WIDTH = 680;
+const int HEIGHT_COLLAPSED = 58;
+const int HEIGHT_EXPANDED = 148;
 
 // Action types
 enum class ActionType {
@@ -82,18 +87,37 @@ std::wstring GetEditText() {
     return buf.data();
 }
 
+void UpdateLauncherDimensions(bool expand) {
+    if (g_isExpanded == expand && g_hMainWnd) return;
+    g_isExpanded = expand;
+
+    if (!g_hMainWnd) return;
+
+    int newHeight = g_isExpanded ? HEIGHT_EXPANDED : HEIGHT_COLLAPSED;
+
+    SetWindowPos(g_hMainWnd, nullptr, 0, 0, WIN_WIDTH, newHeight, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+
+    // Rounded window region
+    HRGN hRgn = CreateRoundRectRgn(0, 0, WIN_WIDTH + 1, newHeight + 1, 20, 20);
+    SetWindowRgn(g_hMainWnd, hRgn, TRUE);
+
+    InvalidateRect(g_hMainWnd, nullptr, TRUE);
+}
+
 void EvaluateQuery(const std::wstring& rawQuery) {
     std::wstring query = rawQuery;
     size_t s = query.find_first_not_of(L" \t");
     if (s == std::wstring::npos) {
         g_action.type = ActionType::Empty;
-        g_action.badgeText = L"SuperC";
-        g_action.primaryText = L"Type a command, math (e.g. 5+7), or search...";
-        g_action.secondaryText = L"Ctrl + Space to toggle";
+        g_action.badgeText.clear();
+        g_action.primaryText.clear();
+        g_action.secondaryText.clear();
         g_action.payload.clear();
+        UpdateLauncherDimensions(false); // Collapsed: ONLY Search Bar!
         return;
     }
     query = query.substr(s);
+    UpdateLauncherDimensions(true); // Expanded: Show results!
 
     // 1. Unit conversion
     if (LooksLikeUnitConversion(query)) {
@@ -144,7 +168,7 @@ void EvaluateQuery(const std::wstring& rawQuery) {
     if (query.rfind(L"port ", 0) == 0) {
         g_action.type = ActionType::BuiltinUtility;
         g_action.badgeText = L"Port";
-        g_action.primaryText = L"Inspect / Kill Port: " + query.substr(5);
+        g_action.primaryText = L"Inspect Port: " + query.substr(5);
         g_action.secondaryText = L"Find process using port";
         g_action.payload = query;
         return;
@@ -324,47 +348,42 @@ LRESULT CALLBACK EditSubclassProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
 }
 
 void DrawKeyBadge(HDC hdc, int& curRightX, int y, const std::wstring& key, const std::wstring& action, COLORREF keyBg, COLORREF keyBorder, COLORREF keyText, COLORREF labelText) {
-    // Measure label text
     SelectObject(hdc, g_hFontHint);
     SetTextColor(hdc, labelText);
     SIZE sizeAction;
     GetTextExtentPoint32W(hdc, action.c_str(), static_cast<int>(action.length()), &sizeAction);
 
-    // Measure keycap text
     SelectObject(hdc, g_hFontKeycap);
     SetTextColor(hdc, keyText);
     SIZE sizeKey;
     GetTextExtentPoint32W(hdc, key.c_str(), static_cast<int>(key.length()), &sizeKey);
 
-    int keyPadX = 8;
+    int keyPadX = 7;
     int keyWidth = sizeKey.cx + (keyPadX * 2);
-    int keyHeight = 20;
+    int keyHeight = 18;
 
-    int totalWidth = sizeAction.cx + keyWidth + 6;
+    int totalWidth = sizeAction.cx + keyWidth + 5;
     int startX = curRightX - totalWidth;
 
-    // Draw keycap rounded box
     RECT rcKey = { startX, y, startX + keyWidth, y + keyHeight };
     HBRUSH hBr = CreateSolidBrush(keyBg);
     HPEN hPen = CreatePen(PS_SOLID, 1, keyBorder);
     HPEN hOldPen = (HPEN)SelectObject(hdc, hPen);
     HBRUSH hOldBr = (HBRUSH)SelectObject(hdc, hBr);
-    RoundRect(hdc, rcKey.left, rcKey.top, rcKey.right, rcKey.bottom, 6, 6);
+    RoundRect(hdc, rcKey.left, rcKey.top, rcKey.right, rcKey.bottom, 5, 5);
     SelectObject(hdc, hOldPen);
     SelectObject(hdc, hOldBr);
     DeleteObject(hBr);
     DeleteObject(hPen);
 
-    // Key text centered inside keycap
     DrawTextW(hdc, key.c_str(), -1, &rcKey, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
-    // Action label next to keycap
     SelectObject(hdc, g_hFontHint);
     SetTextColor(hdc, labelText);
-    RECT rcAction = { startX + keyWidth + 5, y + 2, startX + totalWidth, y + keyHeight };
+    RECT rcAction = { startX + keyWidth + 5, y + 1, startX + totalWidth, y + keyHeight };
     DrawTextW(hdc, action.c_str(), -1, &rcAction, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 
-    curRightX = startX - 14;
+    curRightX = startX - 12;
 }
 
 LRESULT CALLBACK LauncherWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
@@ -384,36 +403,40 @@ LRESULT CALLBACK LauncherWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
             DWORD backdrop = 3;
             DwmSetWindowAttribute(hwnd, 38 /* DWMWA_SYSTEMBACKDROP_TYPE */, &backdrop, sizeof(backdrop));
 
-            // Typography (Segoe UI)
-            g_hFontChevron = CreateFontW(-24, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
+            // Extend frame for translucent backdrop blur
+            MARGINS margins = { -1, -1, -1, -1 };
+            DwmExtendFrameIntoClientArea(hwnd, &margins);
+
+            // Typography
+            g_hFontChevron = CreateFontW(-22, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
                 DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
                 DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
-            g_hFontInput = CreateFontW(-20, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+            g_hFontInput = CreateFontW(-19, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
                 DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
                 DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
-            g_hFontPrimary = CreateFontW(-18, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
+            g_hFontPrimary = CreateFontW(-17, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
                 DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
                 DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
-            g_hFontBadge = CreateFontW(-12, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
+            g_hFontBadge = CreateFontW(-11, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
                 DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
                 DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
             g_hFontHint = CreateFontW(-12, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
                 DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
                 DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
-            g_hFontKeycap = CreateFontW(-11, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
+            g_hFontKeycap = CreateFontW(-10, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
                 DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
                 DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
 
-            // Seamless borderless Edit control
+            // Seamless borderless Edit control inside the top search pill
             g_hEdit = CreateWindowExW(
                 0, L"EDIT", L"",
                 WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
-                52, 17, 600, 30,
+                46, 14, WIN_WIDTH - 64, 28,
                 hwnd, (HMENU)101, GetModuleHandle(nullptr), nullptr
             );
             SendMessage(g_hEdit, WM_SETFONT, (WPARAM)g_hFontInput, TRUE);
 
-            // Cue banner placeholder
+            // Native cue banner placeholder
             SendMessageW(g_hEdit, 0x1501 /* EM_SETCUEBANNER */, TRUE, (LPARAM)L"Type a command, calculation (e.g. 5+7), or search...");
 
             g_oldEditProc = (WNDPROC)SetWindowLongPtrW(g_hEdit, GWLP_WNDPROC, (LONG_PTR)EditSubclassProc);
@@ -423,7 +446,7 @@ LRESULT CALLBACK LauncherWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
         }
 
         case WM_ERASEBKGND:
-            return 1; // Double-buffering prevents all flicker
+            return 1; // Double-buffering prevents flicker
 
         case WM_COMMAND: {
             if (LOWORD(wParam) == 101 && HIWORD(wParam) == EN_CHANGE) {
@@ -438,13 +461,13 @@ LRESULT CALLBACK LauncherWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
             HDC hdc = (HDC)wParam;
             if (g_isDarkMode) {
                 SetTextColor(hdc, RGB(250, 250, 250));
-                SetBkColor(hdc, RGB(26, 26, 30));
-                static HBRUSH hBrDark = CreateSolidBrush(RGB(26, 26, 30));
+                SetBkColor(hdc, RGB(34, 37, 45));
+                static HBRUSH hBrDark = CreateSolidBrush(RGB(34, 37, 45));
                 return (LRESULT)hBrDark;
             } else {
                 SetTextColor(hdc, RGB(20, 20, 24));
-                SetBkColor(hdc, RGB(255, 255, 255));
-                static HBRUSH hBrLight = CreateSolidBrush(RGB(255, 255, 255));
+                SetBkColor(hdc, RGB(244, 245, 248));
+                static HBRUSH hBrLight = CreateSolidBrush(RGB(244, 245, 248));
                 return (LRESULT)hBrLight;
             }
         }
@@ -463,98 +486,120 @@ LRESULT CALLBACK LauncherWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
             HBITMAP hBmp = CreateCompatibleBitmap(hdcScreen, width, height);
             HBITMAP hOldBmp = (HBITMAP)SelectObject(hdc, hBmp);
 
-            // Palette
-            COLORREF bgCol = g_isDarkMode ? RGB(26, 26, 30) : RGB(255, 255, 255);
-            COLORREF borderCol = g_isDarkMode ? RGB(56, 56, 64) : RGB(225, 225, 232);
-            COLORREF dividerCol = g_isDarkMode ? RGB(44, 44, 52) : RGB(236, 236, 240);
-            COLORREF chevronCol = RGB(0, 180, 255); // Vibrant cyan
+            // Translucent glass palette
+            COLORREF bgCol = g_isDarkMode ? RGB(22, 24, 30) : RGB(255, 255, 255);
+            COLORREF borderCol = g_isDarkMode ? RGB(58, 62, 74) : RGB(218, 222, 230);
+            COLORREF chevronCol = RGB(0, 200, 255); // Electric cyan
+
+            // Top Search Bar Capsule
+            COLORREF searchBarBg = g_isDarkMode ? RGB(34, 37, 45) : RGB(244, 245, 248);
+            COLORREF searchBarBorder = g_isDarkMode ? RGB(54, 58, 70) : RGB(222, 225, 232);
+
+            // Bottom Result Card
+            COLORREF resultCardBg = g_isDarkMode ? RGB(28, 30, 38) : RGB(249, 250, 253);
+            COLORREF resultCardBorder = g_isDarkMode ? RGB(48, 52, 64) : RGB(226, 228, 236);
+
             COLORREF primaryTextCol = g_isDarkMode ? RGB(255, 255, 255) : RGB(18, 18, 22);
-            COLORREF secondaryTextCol = g_isDarkMode ? RGB(150, 150, 160) : RGB(115, 115, 125);
+            COLORREF secondaryTextCol = g_isDarkMode ? RGB(145, 148, 160) : RGB(115, 118, 128);
 
             // Badge styling
-            COLORREF badgeBg = g_isDarkMode ? RGB(36, 46, 68) : RGB(232, 242, 255);
-            COLORREF badgeBorder = g_isDarkMode ? RGB(50, 80, 130) : RGB(180, 210, 255);
-            COLORREF badgeText = g_isDarkMode ? RGB(80, 190, 255) : RGB(0, 110, 220);
+            COLORREF badgeBg = g_isDarkMode ? RGB(36, 48, 72) : RGB(230, 242, 255);
+            COLORREF badgeBorder = g_isDarkMode ? RGB(50, 85, 140) : RGB(175, 210, 255);
+            COLORREF badgeText = g_isDarkMode ? RGB(75, 190, 255) : RGB(0, 110, 220);
 
             // Keycap styling
-            COLORREF keyBg = g_isDarkMode ? RGB(38, 38, 44) : RGB(242, 242, 246);
-            COLORREF keyBorder = g_isDarkMode ? RGB(60, 60, 68) : RGB(216, 216, 224);
-            COLORREF keyText = g_isDarkMode ? RGB(210, 210, 220) : RGB(60, 60, 70);
+            COLORREF keyBg = g_isDarkMode ? RGB(40, 42, 50) : RGB(238, 240, 244);
+            COLORREF keyBorder = g_isDarkMode ? RGB(62, 66, 78) : RGB(212, 215, 222);
+            COLORREF keyText = g_isDarkMode ? RGB(210, 212, 222) : RGB(65, 68, 78);
 
-            // 1. Background fill
+            // 1. Overall window background
             HBRUSH hBrBg = CreateSolidBrush(bgCol);
             FillRect(hdc, &rc, hBrBg);
             DeleteObject(hBrBg);
 
-            // 2. Rounded outer border
+            // 2. Outer window rounded border
             HPEN hPenBorder = CreatePen(PS_SOLID, 1, borderCol);
             HPEN hOldPen = (HPEN)SelectObject(hdc, hPenBorder);
             HBRUSH hOldBrush = (HBRUSH)SelectObject(hdc, GetStockObject(NULL_BRUSH));
-            RoundRect(hdc, rc.left, rc.top, rc.right - 1, rc.bottom - 1, 18, 18);
+            RoundRect(hdc, rc.left, rc.top, rc.right - 1, rc.bottom - 1, 20, 20);
             SelectObject(hdc, hOldPen);
             SelectObject(hdc, hOldBrush);
             DeleteObject(hPenBorder);
 
             SetBkMode(hdc, TRANSPARENT);
 
-            // 3. Electric Chevron prompt ">"
+            // 3. Top Input Bar Pill Container: [6, 6, width-6, 50]
+            RECT rcSearchPill = { 6, 6, width - 6, 50 };
+            HBRUSH hBrPill = CreateSolidBrush(searchBarBg);
+            HPEN hPenPill = CreatePen(PS_SOLID, 1, searchBarBorder);
+            SelectObject(hdc, hPenPill);
+            SelectObject(hdc, hBrPill);
+            RoundRect(hdc, rcSearchPill.left, rcSearchPill.top, rcSearchPill.right, rcSearchPill.bottom, 14, 14);
+            DeleteObject(hBrPill);
+            DeleteObject(hPenPill);
+
+            // Electric Chevron prompt ›
             SelectObject(hdc, g_hFontChevron);
             SetTextColor(hdc, chevronCol);
-            RECT rcChevron = { 20, 14, 46, 48 };
-            DrawTextW(hdc, L"\x203A" /* Single right-pointing angle quotation mark › */, -1, &rcChevron, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            RECT rcChevron = { 16, 12, 40, 44 };
+            DrawTextW(hdc, L"\x203A", -1, &rcChevron, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
-            // 4. Subtle divider line
-            HPEN hPenDivider = CreatePen(PS_SOLID, 1, dividerCol);
-            SelectObject(hdc, hPenDivider);
-            MoveToEx(hdc, 18, 56, nullptr);
-            LineTo(hdc, rc.right - 18, 56);
-            DeleteObject(hPenDivider);
+            // 4. Bottom Result Card (ONLY drawn when expanded!)
+            if (g_isExpanded) {
+                // Clear visual separation: 8px gap between input bar and result card!
+                RECT rcResultCard = { 6, 58, width - 6, height - 6 };
+                HBRUSH hBrCard = CreateSolidBrush(resultCardBg);
+                HPEN hPenCard = CreatePen(PS_SOLID, 1, resultCardBorder);
+                SelectObject(hdc, hPenCard);
+                SelectObject(hdc, hBrCard);
+                RoundRect(hdc, rcResultCard.left, rcResultCard.top, rcResultCard.right, rcResultCard.bottom, 14, 14);
+                DeleteObject(hBrCard);
+                DeleteObject(hPenCard);
 
-            // 5. Category Badge Pill
-            int badgeX = 22;
-            int badgeY = 67;
-            if (!g_action.badgeText.empty()) {
-                SelectObject(hdc, g_hFontBadge);
-                SetTextColor(hdc, badgeText);
-                SIZE sizeBadge;
-                GetTextExtentPoint32W(hdc, g_action.badgeText.c_str(), static_cast<int>(g_action.badgeText.length()), &sizeBadge);
+                // Category Badge Pill
+                int badgeX = 18;
+                int badgeY = 70;
+                if (!g_action.badgeText.empty()) {
+                    SelectObject(hdc, g_hFontBadge);
+                    SetTextColor(hdc, badgeText);
+                    SIZE sizeBadge;
+                    GetTextExtentPoint32W(hdc, g_action.badgeText.c_str(), static_cast<int>(g_action.badgeText.length()), &sizeBadge);
 
-                int padX = 10;
-                int badgeW = sizeBadge.cx + (padX * 2);
-                int badgeH = 22;
+                    int padX = 9;
+                    int badgeW = sizeBadge.cx + (padX * 2);
+                    int badgeH = 20;
 
-                RECT rcBadge = { badgeX, badgeY, badgeX + badgeW, badgeY + badgeH };
-                HBRUSH hBrdg = CreateSolidBrush(badgeBg);
-                HPEN hPndg = CreatePen(PS_SOLID, 1, badgeBorder);
-                HPEN hOldP = (HPEN)SelectObject(hdc, hPndg);
-                HBRUSH hOldB = (HBRUSH)SelectObject(hdc, hBrdg);
-                RoundRect(hdc, rcBadge.left, rcBadge.top, rcBadge.right, rcBadge.bottom, 8, 8);
-                SelectObject(hdc, hOldP);
-                SelectObject(hdc, hOldB);
-                DeleteObject(hBrdg);
-                DeleteObject(hPndg);
+                    RECT rcBadge = { badgeX, badgeY, badgeX + badgeW, badgeY + badgeH };
+                    HBRUSH hBrdg = CreateSolidBrush(badgeBg);
+                    HPEN hPndg = CreatePen(PS_SOLID, 1, badgeBorder);
+                    SelectObject(hdc, hPndg);
+                    SelectObject(hdc, hBrdg);
+                    RoundRect(hdc, rcBadge.left, rcBadge.top, rcBadge.right, rcBadge.bottom, 6, 6);
+                    DeleteObject(hBrdg);
+                    DeleteObject(hPndg);
 
-                DrawTextW(hdc, g_action.badgeText.c_str(), -1, &rcBadge, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-                badgeX += badgeW + 12;
+                    DrawTextW(hdc, g_action.badgeText.c_str(), -1, &rcBadge, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+                    badgeX += badgeW + 10;
+                }
+
+                // Primary Result Text
+                SelectObject(hdc, g_hFontPrimary);
+                SetTextColor(hdc, primaryTextCol);
+                RECT rcPrimary = { badgeX, 66, width - 20, 94 };
+                DrawTextW(hdc, g_action.primaryText.c_str(), -1, &rcPrimary, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+
+                // Footer: Secondary subtitle on left
+                SelectObject(hdc, g_hFontHint);
+                SetTextColor(hdc, secondaryTextCol);
+                RECT rcSecondary = { 18, 108, 320, 130 };
+                DrawTextW(hdc, g_action.secondaryText.c_str(), -1, &rcSecondary, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+
+                // Footer: Interactive Keycaps on right
+                int rightX = width - 18;
+                DrawKeyBadge(hdc, rightX, 108, L"Esc", L"Close", keyBg, keyBorder, keyText, secondaryTextCol);
+                DrawKeyBadge(hdc, rightX, 108, L"Ctrl+\x21B5", L"Admin", keyBg, keyBorder, keyText, secondaryTextCol);
+                DrawKeyBadge(hdc, rightX, 108, L"\x21B5 Enter", L"Run", keyBg, keyBorder, keyText, secondaryTextCol);
             }
-
-            // 6. Primary Result Text
-            SelectObject(hdc, g_hFontPrimary);
-            SetTextColor(hdc, primaryTextCol);
-            RECT rcPrimary = { badgeX, 64, rc.right - 20, 94 };
-            DrawTextW(hdc, g_action.primaryText.c_str(), -1, &rcPrimary, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-
-            // 7. Footer: Secondary text on left
-            SelectObject(hdc, g_hFontHint);
-            SetTextColor(hdc, secondaryTextCol);
-            RECT rcSecondary = { 22, 102, 340, 126 };
-            DrawTextW(hdc, g_action.secondaryText.c_str(), -1, &rcSecondary, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-
-            // 8. Footer: Interactive Keycaps on right
-            int rightX = rc.right - 20;
-            DrawKeyBadge(hdc, rightX, 102, L"Esc", L"Close", keyBg, keyBorder, keyText, secondaryTextCol);
-            DrawKeyBadge(hdc, rightX, 102, L"Ctrl+\x21B5", L"Admin", keyBg, keyBorder, keyText, secondaryTextCol);
-            DrawKeyBadge(hdc, rightX, 102, L"\x21B5 Enter", L"Run", keyBg, keyBorder, keyText, secondaryTextCol);
 
             // Blit off-screen buffer to display
             BitBlt(hdcScreen, 0, 0, width, height, hdc, 0, 0, SRCCOPY);
@@ -601,26 +646,24 @@ HWND CreateLauncherWindow(HINSTANCE hInstance) {
     wc.style = CS_DROPSHADOW;
     RegisterClassExW(&wc);
 
-    int winWidth = 700;
-    int winHeight = 138;
-
-    POINT ptCursor;
-    GetCursorPos(&ptCursor);
-    HMONITOR hMon = MonitorFromPoint(ptCursor, MONITOR_DEFAULTTOPRIMARY);
-    MONITORINFO mi = { sizeof(MONITORINFO) };
-    GetMonitorInfo(hMon, &mi);
-
-    int posX = mi.rcWork.left + ((mi.rcWork.right - mi.rcWork.left) - winWidth) / 2;
-    int posY = mi.rcWork.top + ((mi.rcWork.bottom - mi.rcWork.top) / 4);
+    int posX = (GetSystemMetrics(SM_CXSCREEN) - WIN_WIDTH) / 2;
+    int posY = GetSystemMetrics(SM_CYSCREEN) / 4;
 
     g_hMainWnd = CreateWindowExW(
-        WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
+        WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_LAYERED,
         CLASS_NAME,
         L"SuperC Quick Launcher",
         WS_POPUP,
-        posX, posY, winWidth, winHeight,
+        posX, posY, WIN_WIDTH, HEIGHT_COLLAPSED,
         nullptr, nullptr, hInstance, nullptr
     );
+
+    // Translucent glass opacity (240 / 255 = ~94% opacity with blurred background)
+    SetLayeredWindowAttributes(g_hMainWnd, 0, 242, LWA_ALPHA);
+
+    // Initial collapsed rounded region
+    HRGN hRgn = CreateRoundRectRgn(0, 0, WIN_WIDTH + 1, HEIGHT_COLLAPSED + 1, 20, 20);
+    SetWindowRgn(g_hMainWnd, hRgn, TRUE);
 
     return g_hMainWnd;
 }
@@ -634,12 +677,16 @@ void ShowLauncher() {
     MONITORINFO mi = { sizeof(MONITORINFO) };
     GetMonitorInfo(hMon, &mi);
 
-    int winWidth = 700;
-    int winHeight = 138;
-    int posX = mi.rcWork.left + ((mi.rcWork.right - mi.rcWork.left) - winWidth) / 2;
+    int posX = mi.rcWork.left + ((mi.rcWork.right - mi.rcWork.left) - WIN_WIDTH) / 2;
     int posY = mi.rcWork.top + ((mi.rcWork.bottom - mi.rcWork.top) / 4);
 
-    SetWindowPos(g_hMainWnd, HWND_TOPMOST, posX, posY, winWidth, winHeight, SWP_SHOWWINDOW);
+    // Always start collapsed!
+    g_isExpanded = false;
+    SetWindowPos(g_hMainWnd, HWND_TOPMOST, posX, posY, WIN_WIDTH, HEIGHT_COLLAPSED, SWP_SHOWWINDOW);
+
+    HRGN hRgn = CreateRoundRectRgn(0, 0, WIN_WIDTH + 1, HEIGHT_COLLAPSED + 1, 20, 20);
+    SetWindowRgn(g_hMainWnd, hRgn, TRUE);
+
     ShowWindow(g_hMainWnd, SW_SHOW);
     SetForegroundWindow(g_hMainWnd);
 
