@@ -1,0 +1,187 @@
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <windows.h>
+#include <shellapi.h>
+#include <shlobj.h>
+#include <string>
+
+#include "launcher_ui.h"
+#include "../common/app_index.h"
+
+#pragma comment(lib, "shell32.lib")
+
+namespace {
+
+const UINT WM_TRAYICON = WM_USER + 101;
+const UINT ID_TRAY_SHOW = 2001;
+const UINT ID_TRAY_STARTUP = 2002;
+const UINT ID_TRAY_EXIT = 2003;
+
+NOTIFYICONDATAW g_nid = { sizeof(NOTIFYICONDATAW) };
+HWND g_hMsgWnd = nullptr;
+HWND g_hLauncher = nullptr;
+
+std::wstring GetSelfPath() {
+    wchar_t path[MAX_PATH];
+    GetModuleFileNameW(nullptr, path, MAX_PATH);
+    return path;
+}
+
+std::wstring GetStartupShortcutPath() {
+    wchar_t startupPath[MAX_PATH];
+    if (SHGetFolderPathW(nullptr, CSIDL_STARTUP, nullptr, 0, startupPath) == S_OK) {
+        return std::wstring(startupPath) + L"\\SuperC-Launcher.lnk";
+    }
+    return L"";
+}
+
+bool IsRunOnStartupEnabled() {
+    std::wstring link = GetStartupShortcutPath();
+    if (link.empty()) return false;
+    DWORD attr = GetFileAttributesW(link.c_str());
+    return (attr != INVALID_FILE_ATTRIBUTES);
+}
+
+void ToggleRunOnStartup() {
+    std::wstring link = GetStartupShortcutPath();
+    if (link.empty()) return;
+
+    if (IsRunOnStartupEnabled()) {
+        DeleteFileW(link.c_str());
+    } else {
+        // Create shortcut using IShellLink
+        CoInitialize(nullptr);
+        IShellLinkW* psl = nullptr;
+        if (SUCCEEDED(CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER, IID_IShellLinkW, reinterpret_cast<void**>(&psl)))) {
+            std::wstring target = GetSelfPath();
+            psl->SetPath(target.c_str());
+            psl->SetDescription(L"SuperC Quick Launcher");
+
+            IPersistFile* ppf = nullptr;
+            if (SUCCEEDED(psl->QueryInterface(IID_IPersistFile, reinterpret_cast<void**>(&ppf)))) {
+                ppf->Save(link.c_str(), TRUE);
+                ppf->Release();
+            }
+            psl->Release();
+        }
+        CoUninitialize();
+    }
+}
+
+void ShowTrayContextMenu(HWND hwnd) {
+    POINT pt;
+    GetCursorPos(&pt);
+
+    HMENU hMenu = CreatePopupMenu();
+    InsertMenuW(hMenu, 0, MF_BYPOSITION | MF_STRING, ID_TRAY_SHOW, L"Open Launcher (Ctrl + Space)");
+    InsertMenuW(hMenu, 1, MF_BYPOSITION | MF_SEPARATOR, 0, nullptr);
+
+    UINT startupFlags = MF_BYPOSITION | MF_STRING;
+    if (IsRunOnStartupEnabled()) startupFlags |= MF_CHECKED;
+    InsertMenuW(hMenu, 2, startupFlags, ID_TRAY_STARTUP, L"Start with Windows");
+
+    InsertMenuW(hMenu, 3, MF_BYPOSITION | MF_SEPARATOR, 0, nullptr);
+    InsertMenuW(hMenu, 4, MF_BYPOSITION | MF_STRING, ID_TRAY_EXIT, L"Exit SuperC");
+
+    SetForegroundWindow(hwnd);
+    TrackPopupMenu(hMenu, TPM_BOTTOMALIGN | TPM_RIGHTALIGN, pt.x, pt.y, 0, hwnd, nullptr);
+    DestroyMenu(hMenu);
+}
+
+LRESULT CALLBACK MsgWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    switch (msg) {
+        case WM_HOTKEY: {
+            if (wParam == 1) {
+                ToggleLauncher();
+            }
+            return 0;
+        }
+
+        case WM_TRAYICON: {
+            if (lParam == WM_LBUTTONUP) {
+                ToggleLauncher();
+            } else if (lParam == WM_RBUTTONUP) {
+                ShowTrayContextMenu(hwnd);
+            }
+            return 0;
+        }
+
+        case WM_COMMAND: {
+            UINT cmd = LOWORD(wParam);
+            if (cmd == ID_TRAY_SHOW) {
+                ShowLauncher();
+            } else if (cmd == ID_TRAY_STARTUP) {
+                ToggleRunOnStartup();
+            } else if (cmd == ID_TRAY_EXIT) {
+                PostQuitMessage(0);
+            }
+            return 0;
+        }
+
+        case WM_DESTROY: {
+            Shell_NotifyIconW(NIM_DELETE, &g_nid);
+            UnregisterHotKey(hwnd, 1);
+            PostQuitMessage(0);
+            return 0;
+        }
+    }
+    return DefWindowProcW(hwnd, msg, wParam, lParam);
+}
+
+} // namespace
+
+int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR /*lpCmdLine*/, int /*nCmdShow*/) {
+    // Single instance mutex
+    HANDLE hMutex = CreateMutexW(nullptr, TRUE, L"Global\\SuperC_QuickLauncher_SingleInstance");
+    if (GetLastError() == ERROR_ALREADY_EXISTS) {
+        CloseHandle(hMutex);
+        return 0;
+    }
+
+    SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+
+    // Warm up app indexer
+    AppIndexer::Instance().RefreshIndex();
+
+    // Create background message-only window for hotkeys and tray
+    const wchar_t* MSG_CLASS = L"SuperC_MsgWndClass";
+    WNDCLASSEXW wcMsg = { sizeof(WNDCLASSEXW) };
+    wcMsg.lpfnWndProc = MsgWndProc;
+    wcMsg.hInstance = hInstance;
+    wcMsg.lpszClassName = MSG_CLASS;
+    RegisterClassExW(&wcMsg);
+
+    g_hMsgWnd = CreateWindowExW(0, MSG_CLASS, L"SuperC_MsgWnd", 0, 0, 0, 0, 0, HWND_MESSAGE, nullptr, hInstance, nullptr);
+
+    // Create the floating launcher window (starts hidden)
+    g_hLauncher = CreateLauncherWindow(hInstance);
+
+    // Register global hotkey: Ctrl + Space
+    RegisterHotKey(g_hMsgWnd, 1, MOD_CONTROL | MOD_NOREPEAT, VK_SPACE);
+
+    // System tray icon
+    g_nid.hWnd = g_hMsgWnd;
+    g_nid.uID = 1;
+    g_nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
+    g_nid.uCallbackMessage = WM_TRAYICON;
+    g_nid.hIcon = LoadIcon(nullptr, IDI_APPLICATION);
+    wcscpy_s(g_nid.szTip, L"SuperC Quick Launcher (Ctrl + Space)");
+    Shell_NotifyIconW(NIM_ADD, &g_nid);
+
+    // Message loop
+    MSG msg;
+    while (GetMessageW(&msg, nullptr, 0, 0)) {
+        TranslateMessage(&msg);
+        DispatchMessageW(&msg);
+    }
+
+    if (hMutex) {
+        ReleaseMutex(hMutex);
+        CloseHandle(hMutex);
+    }
+
+    return 0;
+}
