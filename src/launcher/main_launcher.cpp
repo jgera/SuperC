@@ -166,8 +166,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR /*l
     g_nid.hWnd = g_hMsgWnd;
     g_nid.uID = 1;
     g_nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
-    g_nid.uCallbackMessage = WM_TRAYICON;
-    g_nid.hIcon = LoadIcon(nullptr, IDI_APPLICATION);
+    HICON hAppIcon = LoadIcon(hInstance, MAKEINTRESOURCE(1));
+    g_nid.hIcon = hAppIcon ? hAppIcon : LoadIcon(nullptr, IDI_APPLICATION);
     wcscpy_s(g_nid.szTip, L"SuperC Quick Launcher (Ctrl + Space)");
     Shell_NotifyIconW(NIM_ADD, &g_nid);
 

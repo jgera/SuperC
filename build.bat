@@ -21,6 +21,15 @@ if errorlevel 1 (
 
 if not exist "bin" mkdir "bin"
 
+taskkill /F /IM SuperC-Launcher.exe >nul 2>&1
+
+echo Compiling Windows Resources (Icon)...
+rc.exe /nologo /fo bin\app.res src\resources\app.rc
+if errorlevel 1 (
+    echo [ERROR] Resource compilation failed.
+    exit /b 1
+)
+
 set "COMMON_FLAGS=/nologo /O2 /W4 /EHsc /std:c++17 /DUNICODE /D_UNICODE /Isrc\common /Isrc\cli /Isrc\launcher"
 set "COMMON_LIBS=user32.lib gdi32.lib shell32.lib iphlpapi.lib ws2_32.lib advapi32.lib crypt32.lib comctl32.lib dwmapi.lib ole32.lib"
 
@@ -30,6 +39,7 @@ cl.exe %COMMON_FLAGS% ^
     /Fo:bin\ ^
     src\cli\main_cli.cpp src\cli\ui.cpp ^
     src\common\math_eval.cpp src\common\handlers.cpp ^
+    bin\app.res ^
     /link /SUBSYSTEM:WINDOWS %COMMON_LIBS%
 
 if errorlevel 1 (
@@ -47,6 +57,7 @@ cl.exe %COMMON_FLAGS% ^
     src\cli\ui.cpp ^
     src\common\math_eval.cpp src\common\unit_conv.cpp src\common\app_index.cpp ^
     src\common\window_walker.cpp src\common\sys_control.cpp src\common\handlers.cpp ^
+    bin\app.res ^
     /link /SUBSYSTEM:WINDOWS %COMMON_LIBS%
 
 if errorlevel 1 (
@@ -57,7 +68,7 @@ copy /y bin\SuperC-Launcher.exe SuperC-Launcher.exe >nul
 
 echo.
 echo ===================================================
-echo [SUCCESS] Both binaries built successfully!
+echo [SUCCESS] Both binaries built successfully with icon!
 echo   1. c.exe (Win+R / CLI Tool)
 echo   2. SuperC-Launcher.exe (Ctrl+Space Quick Launcher)
 echo ===================================================
