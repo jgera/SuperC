@@ -33,5 +33,7 @@ private:
 
     void LoadSettings();
     void SaveSettings();
+    void ScanAppsFolder();
     void ScanDirectory(const std::wstring& dir);
+    bool AddApp(const std::wstring& name, const std::wstring& path);
 };

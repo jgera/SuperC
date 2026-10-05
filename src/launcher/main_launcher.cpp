@@ -45,11 +45,12 @@ void ShowTrayContextMenu(HWND hwnd) {
     UINT startupFlags = MF_BYPOSITION | MF_STRING;
     if (IsRunOnStartupEnabled()) startupFlags |= MF_CHECKED;
     InsertMenuW(hMenu, 4, startupFlags, ID_TRAY_STARTUP, L"Start with Windows");
+    InsertMenuW(hMenu, 5, MF_BYPOSITION | MF_STRING, IDM_RESET_POS, L"Reset Position to Center");
 
-    InsertMenuW(hMenu, 5, MF_BYPOSITION | MF_STRING, ID_TRAY_HELP, L"Documentation (GitHub)");
+    InsertMenuW(hMenu, 6, MF_BYPOSITION | MF_STRING, ID_TRAY_HELP, L"Documentation (GitHub)");
 
-    InsertMenuW(hMenu, 6, MF_BYPOSITION | MF_SEPARATOR, 0, nullptr);
-    InsertMenuW(hMenu, 7, MF_BYPOSITION | MF_STRING, ID_TRAY_EXIT, L"Exit SuperC");
+    InsertMenuW(hMenu, 7, MF_BYPOSITION | MF_SEPARATOR, 0, nullptr);
+    InsertMenuW(hMenu, 8, MF_BYPOSITION | MF_STRING, ID_TRAY_EXIT, L"Exit SuperC");
 
     // Required sequence for Shell Notification Icon context menu responsiveness
     SetForegroundWindow(hwnd);
@@ -65,6 +66,8 @@ void ShowTrayContextMenu(HWND hwnd) {
         AppIndexer::Instance().SetAppsOnly(!appsOnly);
     } else if (cmd == ID_TRAY_STARTUP) {
         ToggleRunOnStartup();
+    } else if (cmd == IDM_RESET_POS) {
+        ResetLauncherPosition();
     } else if (cmd == ID_TRAY_HELP) {
         ShellExecuteW(nullptr, L"open", L"https://github.com/jgera/SuperC", nullptr, nullptr, SW_SHOWNORMAL);
     } else if (cmd == ID_TRAY_EXIT) {

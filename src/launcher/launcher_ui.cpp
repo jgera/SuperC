@@ -41,6 +41,9 @@ HFONT g_hFontKeycap = nullptr;
 bool g_isDarkMode = true;
 bool g_isExpanded = false;
 bool g_isMenuOpen = false;
+bool g_hasCustomPos = false;
+int g_customX = 0;
+int g_customY = 0;
 
 const int WIN_WIDTH = 680;
 const int HEIGHT_COLLAPSED = 58;
@@ -110,6 +113,49 @@ bool LoadThemePreference(bool& isDark) {
         RegCloseKey(hKey);
     }
     return false;
+}
+
+void SaveWindowPosition(int x, int y) {
+    HKEY hKey;
+    if (RegCreateKeyExW(HKEY_CURRENT_USER, L"Software\\SuperC", 0, nullptr, 0, KEY_WRITE, nullptr, &hKey, nullptr) == ERROR_SUCCESS) {
+        DWORD dwX = static_cast<DWORD>(x);
+        DWORD dwY = static_cast<DWORD>(y);
+        DWORD custom = 1;
+        RegSetValueExW(hKey, L"CustomPosX", 0, REG_DWORD, reinterpret_cast<const BYTE*>(&dwX), sizeof(dwX));
+        RegSetValueExW(hKey, L"CustomPosY", 0, REG_DWORD, reinterpret_cast<const BYTE*>(&dwY), sizeof(dwY));
+        RegSetValueExW(hKey, L"HasCustomPos", 0, REG_DWORD, reinterpret_cast<const BYTE*>(&custom), sizeof(custom));
+        RegCloseKey(hKey);
+    }
+}
+
+bool LoadWindowPosition(int& x, int& y) {
+    HKEY hKey;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\SuperC", 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+        DWORD custom = 0;
+        DWORD size = sizeof(custom);
+        if (RegQueryValueExW(hKey, L"HasCustomPos", nullptr, nullptr, reinterpret_cast<LPBYTE>(&custom), &size) == ERROR_SUCCESS && custom == 1) {
+            DWORD dwX = 0, dwY = 0;
+            size = sizeof(dwX);
+            RegQueryValueExW(hKey, L"CustomPosX", nullptr, nullptr, reinterpret_cast<LPBYTE>(&dwX), &size);
+            size = sizeof(dwY);
+            RegQueryValueExW(hKey, L"CustomPosY", nullptr, nullptr, reinterpret_cast<LPBYTE>(&dwY), &size);
+            RegCloseKey(hKey);
+            x = static_cast<int>(dwX);
+            y = static_cast<int>(dwY);
+            return true;
+        }
+        RegCloseKey(hKey);
+    }
+    return false;
+}
+
+void ClearSavedWindowPosition() {
+    HKEY hKey;
+    if (RegCreateKeyExW(HKEY_CURRENT_USER, L"Software\\SuperC", 0, nullptr, 0, KEY_WRITE, nullptr, &hKey, nullptr) == ERROR_SUCCESS) {
+        DWORD custom = 0;
+        RegSetValueExW(hKey, L"HasCustomPos", 0, REG_DWORD, reinterpret_cast<const BYTE*>(&custom), sizeof(custom));
+        RegCloseKey(hKey);
+    }
 }
 
 std::wstring GetLauncherExePath() {
@@ -462,6 +508,7 @@ void ShowContextMenu(HWND hwnd, int screenX, int screenY, bool fromEdit) {
     bool autoStart = IsRunOnStartupEnabled();
     UINT autoFlags = MF_STRING | (autoStart ? MF_CHECKED : MF_UNCHECKED);
     AppendMenuW(hMenu, autoFlags, IDM_AUTOSTART, L"Start with Windows");
+    AppendMenuW(hMenu, MF_STRING, IDM_RESET_POS, L"Reset Position to Center");
 
     AppendMenuW(hMenu, MF_STRING, IDM_HELP, L"SuperC Documentation (GitHub)");
     AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
@@ -521,6 +568,9 @@ void ShowContextMenu(HWND hwnd, int screenX, int screenY, bool fromEdit) {
             break;
         case IDM_HELP:
             ShellExecuteW(nullptr, L"open", L"https://github.com/jgera/SuperC", nullptr, nullptr, SW_SHOWNORMAL);
+            break;
+        case IDM_RESET_POS:
+            ResetLauncherPosition();
             break;
         case IDM_HIDE:
             HideLauncher();
@@ -620,6 +670,15 @@ LRESULT CALLBACK EditSubclassProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
         // Suppress 0x7F (DEL char inserted on Ctrl+Backspace in standard edit controls)
         // and 0x01 (Ctrl+A character)
         if (wParam == 0x7F || wParam == 0x01 || (wParam == 0x08 && (GetKeyState(VK_CONTROL) < 0))) {
+            return 0;
+        }
+    }
+
+    if (msg == WM_LBUTTONDOWN) {
+        // Drag shortcut: Hold Alt or Ctrl while clicking to drag from inside the input box
+        if ((GetKeyState(VK_MENU) < 0) || (GetKeyState(VK_CONTROL) < 0)) {
+            ReleaseCapture();
+            SendMessageW(g_hMainWnd, WM_NCLBUTTONDOWN, HTCAPTION, 0);
             return 0;
         }
     }
@@ -963,6 +1022,48 @@ LRESULT CALLBACK LauncherWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
             return 0;
         }
 
+        case WM_MOVE: {
+            if (IsWindowVisible(hwnd) && !IsIconic(hwnd)) {
+                RECT rc;
+                GetWindowRect(hwnd, &rc);
+                g_customX = rc.left;
+                g_customY = rc.top;
+                g_hasCustomPos = true;
+                SaveWindowPosition(g_customX, g_customY);
+            }
+            return 0;
+        }
+
+        case WM_NCHITTEST: {
+            POINT pt = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+            ScreenToClient(hwnd, &pt);
+
+            // If hovering over result item cards when expanded, return HTCLIENT for mouse interaction
+            if (g_isExpanded && !g_results.empty()) {
+                int count = static_cast<int>(g_results.size());
+                if (pt.y >= 58 && pt.y < 58 + (count * 52) && pt.x >= 6 && pt.x <= WIN_WIDTH - 6) {
+                    return HTCLIENT;
+                }
+            }
+
+            // Top search pill bar (chevron, margins), footer bar, borders: return HTCAPTION for smooth dragging
+            return HTCAPTION;
+        }
+
+        case WM_LBUTTONDOWN: {
+            int y = GET_Y_LPARAM(lParam);
+            int x = GET_X_LPARAM(lParam);
+            int count = static_cast<int>(g_results.size());
+            bool onResultCard = (g_isExpanded && y >= 58 && y < 58 + (count * 52) && x >= 6 && x <= WIN_WIDTH - 6);
+            if (!onResultCard) {
+                ReleaseCapture();
+                SendMessageW(hwnd, WM_NCLBUTTONDOWN, HTCAPTION, 0);
+                return 0;
+            }
+            break;
+        }
+
+        case WM_NCRBUTTONUP:
         case WM_RBUTTONUP: {
             POINT pt;
             GetCursorPos(&pt);
@@ -1022,6 +1123,15 @@ HWND CreateLauncherWindow(HINSTANCE hInstance) {
     int posX = (GetSystemMetrics(SM_CXSCREEN) - WIN_WIDTH) / 2;
     int posY = GetSystemMetrics(SM_CYSCREEN) / 4;
 
+    if (LoadWindowPosition(g_customX, g_customY)) {
+        POINT pt = { g_customX + (WIN_WIDTH / 2), g_customY + (HEIGHT_COLLAPSED / 2) };
+        if (MonitorFromPoint(pt, MONITOR_DEFAULTTONULL) != nullptr) {
+            posX = g_customX;
+            posY = g_customY;
+            g_hasCustomPos = true;
+        }
+    }
+
     g_hMainWnd = CreateWindowExW(
         WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_LAYERED,
         CLASS_NAME,
@@ -1044,14 +1154,30 @@ HWND CreateLauncherWindow(HINSTANCE hInstance) {
 void ShowLauncher() {
     if (!g_hMainWnd) return;
 
-    POINT ptCursor;
-    GetCursorPos(&ptCursor);
-    HMONITOR hMon = MonitorFromPoint(ptCursor, MONITOR_DEFAULTTOPRIMARY);
-    MONITORINFO mi = { sizeof(MONITORINFO) };
-    GetMonitorInfo(hMon, &mi);
+    int posX = 0;
+    int posY = 0;
 
-    int posX = mi.rcWork.left + ((mi.rcWork.right - mi.rcWork.left) - WIN_WIDTH) / 2;
-    int posY = mi.rcWork.top + ((mi.rcWork.bottom - mi.rcWork.top) / 4);
+    if (g_hasCustomPos) {
+        POINT pt = { g_customX + (WIN_WIDTH / 2), g_customY + (HEIGHT_COLLAPSED / 2) };
+        HMONITOR hMon = MonitorFromPoint(pt, MONITOR_DEFAULTTONULL);
+        if (hMon != nullptr) {
+            posX = g_customX;
+            posY = g_customY;
+        } else {
+            g_hasCustomPos = false;
+        }
+    }
+
+    if (!g_hasCustomPos) {
+        POINT ptCursor;
+        GetCursorPos(&ptCursor);
+        HMONITOR hMon = MonitorFromPoint(ptCursor, MONITOR_DEFAULTTOPRIMARY);
+        MONITORINFO mi = { sizeof(MONITORINFO) };
+        GetMonitorInfo(hMon, &mi);
+
+        posX = mi.rcWork.left + ((mi.rcWork.right - mi.rcWork.left) - WIN_WIDTH) / 2;
+        posY = mi.rcWork.top + ((mi.rcWork.bottom - mi.rcWork.top) / 4);
+    }
 
     // Always start collapsed
     g_isExpanded = false;
@@ -1068,6 +1194,14 @@ void ShowLauncher() {
 
     EvaluateQuery(L"");
     InvalidateRect(g_hMainWnd, nullptr, TRUE);
+}
+
+void ResetLauncherPosition() {
+    g_hasCustomPos = false;
+    ClearSavedWindowPosition();
+    if (IsLauncherVisible()) {
+        ShowLauncher();
+    }
 }
 
 void HideLauncher() {

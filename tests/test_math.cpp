@@ -3,6 +3,7 @@
 #include <cmath>
 #include "../src/common/math_eval.h"
 #include "../src/common/unit_conv.h"
+#include "../src/common/app_index.h"
 
 int main() {
     std::wcout << L"Running SuperC Test Suite..." << std::endl;
@@ -86,6 +87,27 @@ int main() {
     assert(testWordDelete(L"", 0, L"", 0));
     assert(testWordDelete(L"   ", 3, L"", 0));
     assert(testWordDelete(L"c:\\path\\file", 12, L"c:\\path\\", 8));
+
+    // 4. App Indexer Tests
+    AppIndexer::Instance().RefreshIndex();
+    auto whatsMatches = AppIndexer::Instance().Search(L"whats", 3);
+    bool foundWhatsApp = false;
+    for (const auto& a : whatsMatches) {
+        if (a.name.find(L"WhatsApp") != std::wstring::npos) foundWhatsApp = true;
+    }
+    std::wcout << L"[TEST AppIndex] WhatsApp found in search: " << (foundWhatsApp ? L"YES" : L"NO") << std::endl;
+    assert(foundWhatsApp);
+
+    auto txtMatches = AppIndexer::Instance().Search(L"txt", 5);
+    bool hasTxt = false;
+    for (const auto& a : txtMatches) {
+        if (a.name.find(L".txt") != std::wstring::npos || a.path.find(L".txt") != std::wstring::npos) {
+            hasTxt = true;
+            std::wcout << L"[WARN AppIndex] Found txt: " << a.name << L" -> " << a.path << std::endl;
+        }
+    }
+    assert(!hasTxt);
+    std::wcout << L"[PASS AppIndex] Zero .txt files in app search results!" << std::endl;
 
     std::wcout << L"All SuperC Tests PASSED successfully!" << std::endl;
     return 0;

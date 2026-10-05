@@ -16,8 +16,12 @@ enum ContextMenuCmds {
     IDM_HELP = 2005,
     IDM_HIDE = 2006,
     IDM_EXIT = 2007,
-    IDM_TOGGLE_APPS_ONLY = 2008
+    IDM_TOGGLE_APPS_ONLY = 2008,
+    IDM_RESET_POS = 2009
 };
+
+// Resets launcher position back to center
+void ResetLauncherPosition();
 
 // Initializes and creates the floating Quick Launcher window
 HWND CreateLauncherWindow(HINSTANCE hInstance);
